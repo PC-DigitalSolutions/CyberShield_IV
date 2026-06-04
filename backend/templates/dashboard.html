@@ -1,0 +1,518 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberShield AI - El Guardian</title>
+    <style>
+        :root {
+            --bg-main: #06111f;
+            --bg-panel: #0b1d34;
+            --bg-panel-2: #102744;
+            --royal-blue: #1565ff;
+            --royal-blue-soft: #3f8cff;
+            --baby-blue: #b9dcff;
+            --silver: #c9d4e3;
+            --silver-2: #e6edf7;
+            --text-main: #f4f8ff;
+            --text-dim: #aebed1;
+            --neon-green: #39ff88;
+            --border-soft: rgba(185, 220, 255, 0.25);
+            --border-strong: rgba(63, 140, 255, 0.5);
+            --shadow-blue: 0 0 30px rgba(21, 101, 255, 0.18);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background:
+                radial-gradient(circle at top left, rgba(30, 90, 200, 0.20), transparent 28%),
+                radial-gradient(circle at top right, rgba(90, 160, 255, 0.12), transparent 22%),
+                linear-gradient(180deg, #040b14 0%, #07111d 55%, #050c16 100%);
+            color: var(--text-main);
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+        }
+
+        .topbar {
+            height: 84px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 28px;
+            border-bottom: 1px solid rgba(63, 140, 255, 0.30);
+            background: rgba(4, 10, 18, 0.92);
+            backdrop-filter: blur(8px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-badge {
+            width: 54px;
+            height: 54px;
+            border-radius: 14px;
+            background: linear-gradient(145deg, #dcecff 0%, #8ec1ff 35%, #2b79ff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--shadow-blue);
+            border: 1px solid rgba(255,255,255,0.18);
+            overflow: hidden;
+        }
+
+        .brand-badge img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .brand-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--baby-blue);
+            letter-spacing: 0.02em;
+        }
+
+        .brand-subtitle {
+            font-size: 0.82rem;
+            color: var(--silver);
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+        }
+
+        .homebase-badge {
+            padding: 10px 18px;
+            border-radius: 999px;
+            border: 1px solid rgba(63, 140, 255, 0.35);
+            background: rgba(21, 101, 255, 0.10);
+            color: var(--baby-blue);
+            font-size: 0.86rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .eagle-entry {
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            background: linear-gradient(145deg, rgba(185,220,255,0.18), rgba(21,101,255,0.22));
+            border: 1px solid rgba(185, 220, 255, 0.32);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 18px rgba(63, 140, 255, 0.22);
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .eagle-entry:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 24px rgba(63, 140, 255, 0.34);
+        }
+
+        .eagle-entry img {
+            width: 44px;
+            height: 44px;
+            object-fit: contain;
+            filter: grayscale(15%) brightness(1.2) hue-rotate(180deg);
+        }
+
+        .eagle-eye {
+            position: absolute;
+            top: 18px;
+            right: 17px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--neon-green);
+            box-shadow: 0 0 10px var(--neon-green), 0 0 18px var(--neon-green);
+            animation: blinkEye 1.2s infinite;
+        }
+
+        @keyframes blinkEye {
+            0%, 44%, 100% { opacity: 1; }
+            50% { opacity: 0.15; }
+            55% { opacity: 1; }
+        }
+
+        .page {
+            max-width: 1360px;
+            margin: 0 auto;
+            padding: 28px;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.25fr 0.75fr;
+            gap: 22px;
+            margin-bottom: 22px;
+        }
+
+        .command-panel, .nav-panel, .intel-strip, .agent-card {
+            border: 1px solid var(--border-soft);
+            background: linear-gradient(180deg, rgba(11,29,52,0.95) 0%, rgba(8,22,39,0.96) 100%);
+            border-radius: 22px;
+            box-shadow: var(--shadow-blue);
+        }
+
+        .command-panel {
+            padding: 24px;
+        }
+
+        .panel-title {
+            color: var(--baby-blue);
+            font-size: 1rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            margin-bottom: 14px;
+        }
+
+        .panel-subtext {
+            color: var(--silver);
+            font-size: 0.98rem;
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+
+        .command-box {
+            width: 100%;
+            min-height: 170px;
+            resize: vertical;
+            border-radius: 18px;
+            border: 1px solid rgba(185,220,255,0.22);
+            background: linear-gradient(180deg, rgba(5,14,24,0.96) 0%, rgba(9,18,33,0.96) 100%);
+            color: var(--silver-2);
+            padding: 18px;
+            font-size: 1rem;
+            outline: none;
+            box-shadow: inset 0 0 18px rgba(21, 101, 255, 0.12);
+        }
+
+        .command-box::placeholder {
+            color: #8aa6c8;
+        }
+
+        .action-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 14px;
+            padding: 12px 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            letter-spacing: 0.02em;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #1b6dff 0%, #58a3ff 100%);
+            color: white;
+            box-shadow: 0 0 18px rgba(63, 140, 255, 0.28);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(185, 220, 255, 0.10);
+            color: var(--baby-blue);
+            border: 1px solid rgba(185,220,255,0.22);
+        }
+
+        .nav-panel {
+            padding: 24px;
+        }
+
+        .nav-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .nav-tile {
+            min-height: 92px;
+            border-radius: 16px;
+            border: 1px solid rgba(185,220,255,0.22);
+            background: linear-gradient(180deg, rgba(17,39,68,0.98) 0%, rgba(10,25,43,0.98) 100%);
+            color: var(--silver-2);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .nav-tile-title {
+            color: var(--baby-blue);
+            font-weight: 800;
+            font-size: 0.95rem;
+        }
+
+        .nav-tile-desc {
+            color: var(--text-dim);
+            font-size: 0.82rem;
+            line-height: 1.4;
+        }
+
+        .intel-strip {
+            padding: 18px 22px;
+            margin-bottom: 22px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+        }
+
+        .intel-item {
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(201,212,227,0.08);
+            border: 1px solid rgba(201,212,227,0.12);
+        }
+
+        .intel-label {
+            color: var(--silver);
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            margin-bottom: 8px;
+        }
+
+        .intel-value {
+            color: var(--silver-2);
+            font-weight: 700;
+            font-size: 0.98rem;
+        }
+
+        .intel-green {
+            color: var(--neon-green);
+        }
+
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 18px;
+        }
+
+        .agent-card {
+            padding: 20px;
+            background: linear-gradient(180deg, rgba(196,216,240,0.09) 0%, rgba(130,170,220,0.06) 100%);
+        }
+
+        .agent-card-title {
+            color: var(--silver-2);
+            font-size: 1.02rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .status-pill {
+            display: inline-block;
+            margin-bottom: 14px;
+            padding: 7px 14px;
+            border-radius: 999px;
+            background: rgba(57,255,136,0.10);
+            border: 1px solid rgba(57,255,136,0.24);
+            color: var(--neon-green);
+            font-weight: 800;
+            font-size: 0.82rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .agent-copy {
+            color: var(--silver);
+            line-height: 1.55;
+            font-size: 0.95rem;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 28px 10px 8px;
+            color: #8da7c5;
+            font-size: 0.92rem;
+        }
+
+        @media (max-width: 1100px) {
+            .hero {
+                grid-template-columns: 1fr;
+            }
+
+            .agents-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .intel-strip {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 700px) {
+            .topbar {
+                height: auto;
+                padding: 18px;
+                flex-wrap: wrap;
+                gap: 16px;
+            }
+
+            .page {
+                padding: 18px;
+            }
+
+            .agents-grid,
+            .intel-strip,
+            .nav-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .brand-title {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="brand">
+            <div class="brand-badge">
+                <img src="/static/cbsdailogo.png" alt="CyberShield App">
+            </div>
+            <div class="brand-text">
+                <div class="brand-title">EL GUARDIAN</div>
+                <div class="brand-subtitle">CyberShield AI Home Base</div>
+            </div>
+        </div>
+
+        <div class="homebase-badge">Neutral Home Base Active</div>
+
+        <div class="eagle-entry" title="Feature Hub Entry">
+            <img src="/static/eagle.png" alt="Feature Hub">
+            <div class="eagle-eye"></div>
+        </div>
+    </div>
+
+    <div class="page">
+        <div class="hero">
+            <div class="command-panel">
+                <div class="panel-title">Command Input</div>
+                <div class="panel-subtext">
+                    Enter a suspicious message, threat description, compliance question, or system event for El Guardian to route and analyze.
+                </div>
+
+                <textarea class="command-box" placeholder="Paste message, describe threat, or issue a CyberShield command..."></textarea>
+
+                <div class="action-row">
+                    <button class="btn btn-primary">Analyze</button>
+                    <button class="btn btn-secondary">Route</button>
+                    <button class="btn btn-secondary">Clear</button>
+                    <button class="btn btn-secondary">Emergency Scan</button>
+                </div>
+            </div>
+
+            <div class="nav-panel">
+                <div class="panel-title">Feature Access</div>
+                <div class="panel-subtext">
+                    Launch compliance tools, child-safe modes, mission controls, and audit intelligence from the Home Base.
+                </div>
+
+                <div class="nav-grid">
+                    <div class="nav-tile">
+                        <div class="nav-tile-title">Compliance Hub</div>
+                        <div class="nav-tile-desc">Audit trails, sovereignty checks, GRC alignment, regulatory review.</div>
+                    </div>
+                    <div class="nav-tile">
+                        <div class="nav-tile-title">Children Mode</div>
+                        <div class="nav-tile-desc">Kid-safe workflows, simplified safety language, protected guidance.</div>
+                    </div>
+                    <div class="nav-tile">
+                        <div class="nav-tile-title">Mission Selector</div>
+                        <div class="nav-tile-desc">Switch event posture while keeping Home Base visually neutral.</div>
+                    </div>
+                    <div class="nav-tile">
+                        <div class="nav-tile-title">Audit Intelligence</div>
+                        <div class="nav-tile-desc">Forensic timelines, IAM risk, and mission-agnostic event review.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="intel-strip">
+            <div class="intel-item">
+                <div class="intel-label">System Status</div>
+                <div class="intel-value intel-green">ACTIVE</div>
+            </div>
+            <div class="intel-item">
+                <div class="intel-label">CNS Status</div>
+                <div class="intel-value">ROUTING READY</div>
+            </div>
+            <div class="intel-item">
+                <div class="intel-label">Mission Mode</div>
+                <div class="intel-value">HOME BASE / NEUTRAL</div>
+            </div>
+            <div class="intel-item">
+                <div class="intel-label">Agent Readiness</div>
+                <div class="intel-value intel-green">4 / 4 ONLINE</div>
+            </div>
+        </div>
+
+        <div class="agents-grid">
+            <div class="agent-card">
+                <div class="agent-card-title">ANTI-SCAMMER GOALIE</div>
+                <div class="status-pill">VIGILANT</div>
+                <div class="agent-copy">
+                    Human-centered protection against phishing, impersonation, coercion, fake profiles, and scam escalation patterns.
+                </div>
+            </div>
+
+            <div class="agent-card">
+                <div class="agent-card-title">SIDELINE REFEREE</div>
+                <div class="status-pill">COMPLIANT</div>
+                <div class="agent-copy">
+                    Cross-border data governance, policy review, sovereignty protection, and legal routing for sensitive movement.
+                </div>
+            </div>
+
+            <div class="agent-card">
+                <div class="agent-card-title">RED CARD SENTINEL</div>
+                <div class="status-pill">AUTHENTICATING</div>
+                <div class="agent-copy">
+                    Synthetic media detection for images, video, and identity anomalies with decisive deepfake enforcement posture.
+                </div>
+            </div>
+
+            <div class="agent-card">
+                <div class="agent-card-title">LAS BARRAS BRAVAS TRIAGE</div>
+                <div class="status-pill">MONITORING</div>
+                <div class="agent-copy">
+                    Tactical SOC triage for traffic spikes, DDoS conditions, incident severity, and stadium-scale cyber disruption.
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            STRENGTH. VIGILANCE. INTELLIGENCE. <br>
+            CyberShield AI - El Guardian
+        </div>
+    </div>
+</body>
+</html>
