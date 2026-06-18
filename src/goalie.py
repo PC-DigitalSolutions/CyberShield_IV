@@ -4,7 +4,7 @@
 class AntiScammerGoalie:
     def __init__(self):
         self.name = "Anti-Scammer Goalie"
-        self.signature = "Strength. Vigilance. Intelligence.\nCyberShield AI (El Guardián)."
+        self.signature = "Strength. Vigilance. Intelligence. | CyberShield AI — El Guardián."
 
     def status(self):
         return f"[{self.name}] VIGILANT\n{self.signature}"
@@ -39,3 +39,8 @@ class AntiScammerGoalie:
 if __name__ == "__main__":
     agent = AntiScammerGoalie()
     print(agent.status())
+
+# Entrypoint for AgentRegistry
+def scan(text: str):
+    agent = AntiScammerGoalie()
+    return agent.scan_intent(text)

@@ -1,0 +1,11 @@
+version: '3.9'
+
+services:
+  cybershield:
+    build: .
+    container_name: cybershield_iv
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    restart: unless-stopped
