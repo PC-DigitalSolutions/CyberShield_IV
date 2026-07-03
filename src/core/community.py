@@ -125,6 +125,7 @@ class CommunityStories:
         self._url = database_url
         self.db_path = db_path
         self._lock = threading.Lock()
+        self._init_error = None  # last Postgres init failure (for diagnostics)
 
         # Prefer Postgres for durability, but a bad/unreachable DATABASE_URL
         # must never crash the whole service. Fall back to SQLite and log
@@ -134,6 +135,7 @@ class CommunityStories:
                 self._init_db()
                 return
             except Exception as exc:
+                self._init_error = f"{type(exc).__name__}: {str(exc)[:200]}"
                 print(
                     f"[community] WARNING: Postgres init failed ({exc!r}). "
                     "Falling back to EPHEMERAL SQLite — community stories will "
@@ -151,6 +153,30 @@ class CommunityStories:
     @property
     def backend(self) -> str:
         return "postgres" if self._pg else "sqlite"
+
+    def db_diagnostics(self) -> dict:
+        """Non-secret view of the DB config, to debug deploys without a shell.
+        Shows the host/scheme actually parsed (credentials stripped) and the
+        raw length so truncation/paste errors are obvious. No password leaks."""
+        url = self._url or ""
+        host = scheme = ""
+        try:
+            from urllib.parse import urlsplit
+            parts = urlsplit(url)
+            scheme = parts.scheme
+            host = parts.hostname or ""
+        except Exception:
+            pass
+        return {
+            "database_url_set": bool(url),
+            "database_url_len": len(url),
+            "scheme": scheme,
+            "host": host,
+            "has_leading_space": url[:1].isspace() if url else False,
+            "has_quotes": url.startswith(("'", '"')) if url else False,
+            "active_backend": self.backend,
+            "init_error": self._init_error,
+        }
 
     def _connect(self):
         if self._pg:
@@ -332,6 +358,7 @@ class CommunityStories:
         return {
             "window_days": days,
             "backend": self.backend,
+            "db_diagnostics": self.db_diagnostics(),
             "events_total": len(rows),
             "by_event": by_event,
             "by_day": dict(sorted(by_day.items())),
