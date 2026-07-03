@@ -5,7 +5,8 @@ import time
 import urllib.request
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from collections import defaultdict, deque
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -15,7 +16,7 @@ load_dotenv()
 
 from src.core.router import ElGuardianCNS
 from src.core.live_monitor import LiveThreatMonitor
-from src.core.community import SCAM_TYPES, stories
+from src.core.community import SCAM_TYPES, stories, validate_story
 from src.agents.guardian_agent import ElGuardian
 from src.agents import goalie_chat, specialists
 
@@ -154,6 +155,44 @@ async def analyze(signal: str = Query(default="")):
     }
 
 
+# ── Rate limiting (troll shield) — sliding window per client IP ──────────
+_rate_hits: dict = defaultdict(deque)
+
+
+def _allow(key: str, limit: int, window_s: int) -> bool:
+    now = time.time()
+    dq = _rate_hits[key]
+    while dq and dq[0] < now - window_s:
+        dq.popleft()
+    if len(dq) >= limit:
+        return False
+    dq.append(now)
+    return True
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0].strip() if fwd else None) or (
+        request.client.host if request.client else "unknown"
+    )
+
+
+def _admin_ok(key: str, request: Request) -> bool:
+    """Admin endpoints: require ADMIN_KEY when set; otherwise localhost only."""
+    admin_key = os.environ.get("ADMIN_KEY", "")
+    if admin_key:
+        return key == admin_key
+    return _client_ip(request) in ("127.0.0.1", "::1", "localhost")
+
+
+def _lang_guess(text: str) -> str:
+    """Rough EN/ES telemetry hint — never stored with the text itself."""
+    t = f" {text.lower()} "
+    es = sum(t.count(f" {w} ") for w in ("que", "para", "pero", "esto", "boleto", "estafa", "dinero", "gracias"))
+    es += sum(text.count(c) for c in "áéíóúñ¿¡")
+    return "es" if es >= 2 else "en"
+
+
 class ChatTurn(BaseModel):
     role: str = "user"
     text: str = ""
@@ -172,14 +211,23 @@ class GoalieReportIn(BaseModel):
 
 
 @app.post("/goalie/chat")
-async def goalie_chat_turn(body: GoalieChatIn):
+async def goalie_chat_turn(body: GoalieChatIn, request: Request):
     """The Anti-Scammer Goalie's own chat lane — multi-turn, grounded in
     community-reported scam stories. History travels with the request."""
+    if not _allow(f"chat:{_client_ip(request)}", limit=20, window_s=600):
+        raise HTTPException(status_code=429, detail="The Goalie needs a breather — try again in a few minutes.")
     matches = stories.match(body.message)
     intel = goalie_chat.build_intel_block(matches, stories.stats())
     history = [t.model_dump() for t in body.history]
     response = await asyncio.to_thread(
         goalie_chat.chat, body.message, history, intel
+    )
+    stories.log_event(
+        "chat",
+        lang=_lang_guess(body.message),
+        msg_len=len(body.message),
+        turns=len(history),
+        matches=len(matches),
     )
     return {
         "status": "ok",
@@ -191,12 +239,24 @@ async def goalie_chat_turn(body: GoalieChatIn):
 
 
 @app.post("/goalie/report")
-async def goalie_report(body: GoalieReportIn):
+async def goalie_report(body: GoalieReportIn, request: Request):
     """Consented, anonymized community scam-story submission. Stories are
     PII-scrubbed on write and feed the Goalie's chat intel."""
     if not body.consent:
         raise HTTPException(status_code=400, detail="consent required")
+    if not _allow(f"report:{_client_ip(request)}", limit=5, window_s=3600):
+        raise HTTPException(status_code=429, detail="Wall limit reached — try again in an hour.")
+    reason = validate_story(body.story)
+    if reason:
+        stories.log_event("report_rejected", scam_type=body.scam_type)
+        raise HTTPException(status_code=422, detail=reason)
     story_id = stories.add(body.story, body.scam_type, body.language, source="form")
+    stories.log_event(
+        "report",
+        scam_type=body.scam_type,
+        lang=body.language or _lang_guess(body.story),
+        story_len=len(body.story),
+    )
     return {"status": "ok", "id": story_id, **stories.stats()}
 
 
@@ -209,6 +269,27 @@ async def goalie_stories(limit: int = Query(default=20, ge=1, le=50)):
         "stories": stories.recent(limit),
         **stories.stats(),
     }
+
+
+@app.get("/goalie/beta-report")
+async def goalie_beta_report(request: Request, key: str = Query(default=""),
+                             days: int = Query(default=14, ge=1, le=90)):
+    """Beta program report — what testers are doing, aggregated metadata only
+    (no chat/story text, no IPs). Protected: ADMIN_KEY, or localhost in dev."""
+    if not _admin_ok(key, request):
+        raise HTTPException(status_code=403, detail="not authorized")
+    return stories.beta_report(days)
+
+
+@app.post("/goalie/stories/{story_id}/hide")
+async def goalie_hide_story(story_id: int, request: Request, key: str = Query(default="")):
+    """Moderation: soft-remove a story from the public wall."""
+    if not _admin_ok(key, request):
+        raise HTTPException(status_code=403, detail="not authorized")
+    if not stories.hide(story_id):
+        raise HTTPException(status_code=404, detail="story not found")
+    stories.log_event("story_hidden", story_id=story_id)
+    return {"status": "ok", "hidden": story_id, **stories.stats()}
 
 
 FOOTBALL_API = "https://api.football-data.org/v4/competitions/WC/matches"

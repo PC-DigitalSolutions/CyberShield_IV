@@ -1,10 +1,19 @@
 """Community scam-story store — the Anti-Scammer Goalie's training ground.
 
 Fans share the scams that hit them or their families (with explicit consent).
-Stories are scrubbed of PII, stored in SQLite, and fed back into the Goalie's
+Stories are scrubbed of PII, stored durably, and fed back into the Goalie's
 chat context — so every report the community files makes him sharper.
+
+Storage backends:
+- SQLite (default, local dev): data/community_stories.db
+- Postgres (production): set DATABASE_URL (e.g. Neon/Supabase) and stories
+  survive redeploys. Same schema, same API.
+
+Also keeps a privacy-first beta telemetry log: event metadata only — never
+chat text, never story text, never IPs.
 """
 
+import json
 import os
 import re
 import sqlite3
@@ -14,6 +23,7 @@ import time
 DB_PATH = os.environ.get(
     "COMMUNITY_DB", os.path.join("data", "community_stories.db")
 )
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 SCAM_TYPES = [
     "romance", "dating", "sugar", "sextortion",
@@ -50,6 +60,34 @@ def _tokens(text: str) -> set:
     return {w for w in words if w not in _STOPWORDS}
 
 
+# ── Troll / spam guard for story submissions ─────────────────────────────
+_URLS = re.compile(r"https?://|www\.", re.I)
+_REPEAT = re.compile(r"(.)\1{7,}")
+# Minimal hard-block list (EN/ES hate slurs). Deliberately short: the goal is
+# blocking drive-by trolling on a public wall, not policing victims' language.
+_BLOCKED_WORDS = re.compile(
+    r"\b(nigger|nigga|faggot|tranny|spic|wetback|kike|chink|retard(ed)?|"
+    r"puto\s+de\s+mierda|pinche\s+put[oa])\b", re.I,
+)
+
+
+def validate_story(story: str) -> str | None:
+    """Returns a rejection reason, or None if the story is acceptable."""
+    text = story.strip()
+    if len(text) < 20:
+        return "Story is too short — tell us a little more so it can help someone."
+    if len(_URLS.findall(text)) > 2:
+        return "Too many links — describe what happened instead of pasting URLs."
+    if _REPEAT.search(text):
+        return "That doesn't look like a real story."
+    letters = re.findall(r"[a-záéíóúñü]", text, re.I)
+    if len(letters) < len(text) * 0.4:
+        return "That doesn't look like a real story."
+    if _BLOCKED_WORDS.search(text):
+        return "Hate speech doesn't go on the wall."
+    return None
+
+
 # Seed stories so the community feed and the Goalie's intel are never empty
 # on a fresh deploy. Marked source="seed" and shown like any other report.
 _SEEDS = [
@@ -82,67 +120,124 @@ _SEEDS = [
 
 
 class CommunityStories:
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path: str = DB_PATH, database_url: str = DATABASE_URL):
+        self._pg = bool(database_url)
+        self._url = database_url
         self.db_path = db_path
         self._lock = threading.Lock()
-        directory = os.path.dirname(db_path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
+        if not self._pg:
+            directory = os.path.dirname(db_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
         self._init_db()
 
+    # ── backend plumbing ──────────────────────────────────────────────
+    @property
+    def backend(self) -> str:
+        return "postgres" if self._pg else "sqlite"
+
     def _connect(self):
+        if self._pg:
+            import psycopg
+            return psycopg.connect(self._url)
         return sqlite3.connect(self.db_path)
 
+    def _q(self, sql: str) -> str:
+        """Translate '?' placeholders for the active backend."""
+        return sql.replace("?", "%s") if self._pg else sql
+
     def _init_db(self):
+        id_col = ("BIGSERIAL PRIMARY KEY" if self._pg
+                  else "INTEGER PRIMARY KEY AUTOINCREMENT")
         with self._lock, self._connect() as con:
-            con.execute(
-                """CREATE TABLE IF NOT EXISTS stories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created REAL NOT NULL,
+            cur = con.cursor()
+            cur.execute(
+                f"""CREATE TABLE IF NOT EXISTS stories (
+                    id {id_col},
+                    created DOUBLE PRECISION NOT NULL,
                     story TEXT NOT NULL,
                     scam_type TEXT NOT NULL,
                     language TEXT NOT NULL DEFAULT '',
-                    source TEXT NOT NULL DEFAULT 'form'
+                    source TEXT NOT NULL DEFAULT 'form',
+                    hidden INTEGER NOT NULL DEFAULT 0
                 )"""
             )
-            # Top-up: insert any seed story not already present, so existing
-            # databases pick up newly added seeds without duplicating old ones.
-            now = time.time()
-            existing = {r[0] for r in con.execute(
-                "SELECT story FROM stories WHERE source = 'seed'"
-            ).fetchall()}
-            con.executemany(
-                "INSERT INTO stories (created, story, scam_type, language, source) "
-                "VALUES (?, ?, ?, ?, 'seed')",
-                [(now - 86400 * (i + 2), s, t, lang)
-                 for i, (s, t, lang) in enumerate(_SEEDS) if s not in existing],
+            cur.execute(
+                f"""CREATE TABLE IF NOT EXISTS events (
+                    id {id_col},
+                    ts DOUBLE PRECISION NOT NULL,
+                    event TEXT NOT NULL,
+                    meta TEXT NOT NULL DEFAULT '{{}}'
+                )"""
             )
+            # SQLite migration: add `hidden` to pre-existing tables.
+            if not self._pg:
+                cols = [r[1] for r in cur.execute("PRAGMA table_info(stories)").fetchall()]
+                if "hidden" not in cols:
+                    cur.execute("ALTER TABLE stories ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
+            # Seed top-up: insert any seed story not already present, so
+            # existing databases pick up new seeds without duplicating.
+            now = time.time()
+            cur.execute("SELECT story FROM stories WHERE source = 'seed'")
+            existing = {r[0] for r in cur.fetchall()}
+            for i, (s, t, lang) in enumerate(_SEEDS):
+                if s not in existing:
+                    cur.execute(
+                        self._q("INSERT INTO stories (created, story, scam_type, language, source) "
+                                "VALUES (?, ?, ?, ?, 'seed')"),
+                        (now - 86400 * (i + 2), s, t, lang),
+                    )
+            con.commit()
 
+    # ── stories ───────────────────────────────────────────────────────
     def add(self, story: str, scam_type: str = "other",
             language: str = "", source: str = "form") -> int:
         story = _scrub(story)
         if scam_type not in SCAM_TYPES:
             scam_type = "other"
         with self._lock, self._connect() as con:
-            cur = con.execute(
-                "INSERT INTO stories (created, story, scam_type, language, source) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (time.time(), story, scam_type, language[:8], source),
-            )
-            return cur.lastrowid
+            cur = con.cursor()
+            if self._pg:
+                cur.execute(
+                    self._q("INSERT INTO stories (created, story, scam_type, language, source) "
+                            "VALUES (?, ?, ?, ?, ?) RETURNING id"),
+                    (time.time(), story, scam_type, language[:8], source),
+                )
+                new_id = cur.fetchone()[0]
+            else:
+                c = cur.execute(
+                    "INSERT INTO stories (created, story, scam_type, language, source) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (time.time(), story, scam_type, language[:8], source),
+                )
+                new_id = c.lastrowid
+            con.commit()
+            return new_id
 
-    def recent(self, limit: int = 20) -> list:
+    def recent(self, limit: int = 20, include_hidden: bool = False) -> list:
+        where = "" if include_hidden else "WHERE hidden = 0"
         with self._lock, self._connect() as con:
-            rows = con.execute(
-                "SELECT id, created, story, scam_type, language FROM stories "
-                "ORDER BY created DESC LIMIT ?",
+            cur = con.cursor()
+            cur.execute(
+                self._q(f"SELECT id, created, story, scam_type, language FROM stories "
+                        f"{where} ORDER BY created DESC LIMIT ?"),
                 (limit,),
-            ).fetchall()
+            )
+            rows = cur.fetchall()
         return [
             {"id": r[0], "created": r[1], "story": r[2],
              "scam_type": r[3], "language": r[4]}
             for r in rows
         ]
+
+    def hide(self, story_id: int) -> bool:
+        """Soft-delete a story from the public wall (moderation)."""
+        with self._lock, self._connect() as con:
+            cur = con.cursor()
+            cur.execute(self._q("UPDATE stories SET hidden = 1 WHERE id = ?"), (story_id,))
+            changed = cur.rowcount
+            con.commit()
+        return changed > 0
 
     def match(self, message: str, k: int = 3) -> list:
         """Top-k stored stories sharing keywords with the incoming message —
@@ -160,16 +255,78 @@ class CommunityStories:
 
     def stats(self) -> dict:
         with self._lock, self._connect() as con:
-            total = con.execute("SELECT COUNT(*) FROM stories").fetchone()[0]
-            week = con.execute(
-                "SELECT COUNT(*) FROM stories WHERE created > ?",
+            cur = con.cursor()
+            cur.execute("SELECT COUNT(*) FROM stories WHERE hidden = 0")
+            total = cur.fetchone()[0]
+            cur.execute(
+                self._q("SELECT COUNT(*) FROM stories WHERE hidden = 0 AND created > ?"),
                 (time.time() - 7 * 86400,),
-            ).fetchone()[0]
-            by_type = dict(con.execute(
-                "SELECT scam_type, COUNT(*) FROM stories GROUP BY scam_type "
-                "ORDER BY COUNT(*) DESC"
-            ).fetchall())
+            )
+            week = cur.fetchone()[0]
+            cur.execute(
+                "SELECT scam_type, COUNT(*) FROM stories WHERE hidden = 0 "
+                "GROUP BY scam_type ORDER BY COUNT(*) DESC"
+            )
+            by_type = dict(cur.fetchall())
         return {"total": total, "this_week": week, "by_type": by_type}
+
+    # ── beta telemetry (metadata only — never message or story text) ──
+    def log_event(self, event: str, **meta):
+        try:
+            with self._lock, self._connect() as con:
+                cur = con.cursor()
+                cur.execute(
+                    self._q("INSERT INTO events (ts, event, meta) VALUES (?, ?, ?)"),
+                    (time.time(), event, json.dumps(meta)),
+                )
+                con.commit()
+        except Exception:
+            pass  # telemetry must never break the product
+
+    def beta_report(self, days: int = 14) -> dict:
+        since = time.time() - days * 86400
+        with self._lock, self._connect() as con:
+            cur = con.cursor()
+            cur.execute(self._q("SELECT ts, event, meta FROM events WHERE ts > ?"), (since,))
+            rows = cur.fetchall()
+
+        by_event: dict = {}
+        by_day: dict = {}
+        langs: dict = {}
+        chat_total = chat_with_intel = 0
+        msg_lens: list = []
+        for ts, event, meta in rows:
+            by_event[event] = by_event.get(event, 0) + 1
+            day = time.strftime("%Y-%m-%d", time.gmtime(ts))
+            by_day.setdefault(day, {})
+            by_day[day][event] = by_day[day].get(event, 0) + 1
+            try:
+                m = json.loads(meta)
+            except Exception:
+                m = {}
+            if lang := m.get("lang"):
+                langs[lang] = langs.get(lang, 0) + 1
+            if event == "chat":
+                chat_total += 1
+                if m.get("matches"):
+                    chat_with_intel += 1
+                if m.get("msg_len"):
+                    msg_lens.append(m["msg_len"])
+
+        return {
+            "window_days": days,
+            "backend": self.backend,
+            "events_total": len(rows),
+            "by_event": by_event,
+            "by_day": dict(sorted(by_day.items())),
+            "languages": langs,
+            "chat": {
+                "turns": chat_total,
+                "community_intel_hit_rate": round(chat_with_intel / chat_total, 3) if chat_total else 0,
+                "avg_message_chars": round(sum(msg_lens) / len(msg_lens)) if msg_lens else 0,
+            },
+            "stories": self.stats(),
+        }
 
 
 stories = CommunityStories()
