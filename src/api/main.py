@@ -5,17 +5,19 @@ import time
 import urllib.request
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
 from starlette.staticfiles import StaticFiles
 
 load_dotenv()
 
 from src.core.router import ElGuardianCNS
 from src.core.live_monitor import LiveThreatMonitor
+from src.core.community import SCAM_TYPES, stories
 from src.agents.guardian_agent import ElGuardian
-from src.agents import specialists
+from src.agents import goalie_chat, specialists
 
 cns = ElGuardianCNS()
 guardian = ElGuardian()
@@ -47,7 +49,7 @@ _allowed += [o.strip() for o in _extra.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}):3000",
+    allow_origin_regex=r"https://.*\.vercel\.app|http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}):\d{2,5}",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -149,6 +151,63 @@ async def analyze(signal: str = Query(default="")):
         "gates": gates,
         "primary_gate": cns.choose_primary_gate(gates) if gates else None,
         "agents": agents,
+    }
+
+
+class ChatTurn(BaseModel):
+    role: str = "user"
+    text: str = ""
+
+
+class GoalieChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[ChatTurn] = []
+
+
+class GoalieReportIn(BaseModel):
+    story: str = Field(min_length=20, max_length=4000)
+    scam_type: str = "other"
+    language: str = ""
+    consent: bool = False
+
+
+@app.post("/goalie/chat")
+async def goalie_chat_turn(body: GoalieChatIn):
+    """The Anti-Scammer Goalie's own chat lane — multi-turn, grounded in
+    community-reported scam stories. History travels with the request."""
+    matches = stories.match(body.message)
+    intel = goalie_chat.build_intel_block(matches, stories.stats())
+    history = [t.model_dump() for t in body.history]
+    response = await asyncio.to_thread(
+        goalie_chat.chat, body.message, history, intel
+    )
+    return {
+        "status": "ok",
+        "agent": "Anti-Scammer Goalie",
+        "gate": "Gate A",
+        "response": response,
+        "community_matches": len(matches),
+    }
+
+
+@app.post("/goalie/report")
+async def goalie_report(body: GoalieReportIn):
+    """Consented, anonymized community scam-story submission. Stories are
+    PII-scrubbed on write and feed the Goalie's chat intel."""
+    if not body.consent:
+        raise HTTPException(status_code=400, detail="consent required")
+    story_id = stories.add(body.story, body.scam_type, body.language, source="form")
+    return {"status": "ok", "id": story_id, **stories.stats()}
+
+
+@app.get("/goalie/stories")
+async def goalie_stories(limit: int = Query(default=20, ge=1, le=50)):
+    """Anonymized community scam-story wall + counts."""
+    return {
+        "status": "ok",
+        "scam_types": SCAM_TYPES,
+        "stories": stories.recent(limit),
+        **stories.stats(),
     }
 
 

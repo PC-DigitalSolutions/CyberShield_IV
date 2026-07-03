@@ -14,3 +14,7 @@ backend_err.log
 # Backups
 *.bak
 *.bak_*
+
+# Local community-stories database (real submissions stay on the machine)
+data/
+*.docx
