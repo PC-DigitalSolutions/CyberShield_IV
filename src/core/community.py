@@ -16,8 +16,9 @@ DB_PATH = os.environ.get(
 )
 
 SCAM_TYPES = [
-    "tickets", "phishing", "smishing", "romance", "impersonation",
-    "crypto", "merch", "travel", "other",
+    "romance", "dating", "sugar", "sextortion",
+    "tickets", "phishing", "smishing", "impersonation",
+    "crypto", "marketplace", "jobs", "merch", "travel", "other",
 ]
 
 # PII scrubbing — stories are anonymous by construction, but people paste
@@ -65,6 +66,18 @@ _SEEDS = [
      "México vs Argentina en el Azteca. Pedía la mitad por transferencia "
      "antes de mandar el QR. El QR que mandó era una captura reciclada.",
      "tickets", "es"),
+    ("A 'sugar daddy' on Instagram offered me $500 a week just to chat. All I "
+     "had to do was buy a $50 gift card first to 'prove loyalty' — then he'd "
+     "'refund it with my first allowance.' Blocked him, but he had hundreds "
+     "of followers doing the same thing.", "sugar", "en"),
+    ("Matched with a guy on a dating app, super sweet for two weeks, then his "
+     "'mom had a medical emergency' and he needed $200 by Zelle. When I "
+     "hesitated he got angry and guilt-tripped me. Classic romance play — "
+     "the profile disappeared the next day.", "dating", "en"),
+    ("Conocí a alguien en una app, pasamos a videollamada y grabó la sesión "
+     "sin que yo supiera. Después amenazó con mandársela a mi familia si no "
+     "pagaba $300. NO pagué: guardé la evidencia, lo bloqueé y lo reporté a "
+     "la app. Nunca mandó nada — es su juego de miedo.", "sextortion", "es"),
 ]
 
 
@@ -92,15 +105,18 @@ class CommunityStories:
                     source TEXT NOT NULL DEFAULT 'form'
                 )"""
             )
-            count = con.execute("SELECT COUNT(*) FROM stories").fetchone()[0]
-            if count == 0:
-                now = time.time()
-                con.executemany(
-                    "INSERT INTO stories (created, story, scam_type, language, source) "
-                    "VALUES (?, ?, ?, ?, 'seed')",
-                    [(now - 86400 * (i + 2), s, t, lang)
-                     for i, (s, t, lang) in enumerate(_SEEDS)],
-                )
+            # Top-up: insert any seed story not already present, so existing
+            # databases pick up newly added seeds without duplicating old ones.
+            now = time.time()
+            existing = {r[0] for r in con.execute(
+                "SELECT story FROM stories WHERE source = 'seed'"
+            ).fetchall()}
+            con.executemany(
+                "INSERT INTO stories (created, story, scam_type, language, source) "
+                "VALUES (?, ?, ?, ?, 'seed')",
+                [(now - 86400 * (i + 2), s, t, lang)
+                 for i, (s, t, lang) in enumerate(_SEEDS) if s not in existing],
+            )
 
     def add(self, story: str, scam_type: str = "other",
             language: str = "", source: str = "form") -> int:
