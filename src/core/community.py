@@ -125,10 +125,26 @@ class CommunityStories:
         self._url = database_url
         self.db_path = db_path
         self._lock = threading.Lock()
-        if not self._pg:
-            directory = os.path.dirname(db_path)
-            if directory:
-                os.makedirs(directory, exist_ok=True)
+
+        # Prefer Postgres for durability, but a bad/unreachable DATABASE_URL
+        # must never crash the whole service. Fall back to SQLite and log
+        # loudly so the operator knows stories won't persist until it's fixed.
+        if self._pg:
+            try:
+                self._init_db()
+                return
+            except Exception as exc:
+                print(
+                    f"[community] WARNING: Postgres init failed ({exc!r}). "
+                    "Falling back to EPHEMERAL SQLite — community stories will "
+                    "NOT persist across restarts until DATABASE_URL is fixed.",
+                    flush=True,
+                )
+                self._pg = False
+
+        directory = os.path.dirname(self.db_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         self._init_db()
 
     # ── backend plumbing ──────────────────────────────────────────────
