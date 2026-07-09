@@ -11,6 +11,11 @@ from google.genai import types
 
 _client = None
 
+# Rolling alias so we don't break when a pinned model version is retired
+# (a specific id like gemini-2.5-flash can 404 on a project once deprecated).
+# Override per-environment with the GEMINI_MODEL env var if needed.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+
 
 def _get_client():
     global _client
@@ -93,7 +98,7 @@ def respond(gate: str, signal: str, scanner_result=None) -> str | None:
     try:
         client = _get_client()
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             config=types.GenerateContentConfig(system_instruction=system),
             contents=contents,
         )

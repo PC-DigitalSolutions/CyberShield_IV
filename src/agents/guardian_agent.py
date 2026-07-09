@@ -2,6 +2,8 @@ import os
 from google import genai
 from google.genai import types
 
+from src.agents.specialists import GEMINI_MODEL
+
 MASTER_PROMPT = """[SYSTEM IDENTITY: CYBERSHIELD AI — EL GUARDIÁN]
 You are CyberShield AI, a multilingual global-event security intelligence agent. Your mission is to protect fans, travelers, staff, and organizers during high-stakes events like the 2026 FIFA World Cup. You bridge the gap between technical cybersecurity and human-factor protection.
 
@@ -101,7 +103,7 @@ class ElGuardian:
         try:
             client = self._get_client()
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=GEMINI_MODEL,
                 config=types.GenerateContentConfig(system_instruction=MASTER_PROMPT),
                 contents=contents,
             )

@@ -49,7 +49,7 @@ El Guardián gives the human-facing verdict and dispatches the right specialist,
 ## Tech stack
 
 - **Python 3.11**, **FastAPI**, **Uvicorn**
-- **Google Gemini** (`google-genai`, `gemini-2.5-flash`) for El Guardián + specialists
+- **Google Gemini** (`google-genai`, `gemini-flash-latest`, override via `GEMINI_MODEL`) for El Guardián + specialists
 - **Google News RSS** (live threat feed) · **football-data.org** (live match data)
 - Stdlib-only ingestion (`urllib`, `xml.etree`) — no heavy scraping deps
 

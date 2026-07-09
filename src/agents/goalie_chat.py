@@ -6,7 +6,7 @@ stories. Stateless: the frontend sends the running history with each turn.
 
 from google.genai import types
 
-from src.agents.specialists import _get_client
+from src.agents.specialists import GEMINI_MODEL, _get_client
 
 CHAT_PERSONA = (
     "You are the Anti-Scammer Goalie of CyberShield AI — the community's human-touch "
@@ -78,7 +78,7 @@ def chat(message: str, history: list | None = None, intel_block: str | None = No
     try:
         client = _get_client()
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             config=types.GenerateContentConfig(system_instruction=SYSTEM),
             contents=contents,
         )
