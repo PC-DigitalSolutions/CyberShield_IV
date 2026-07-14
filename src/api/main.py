@@ -6,7 +6,7 @@ import urllib.request
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from collections import defaultdict, deque
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -18,7 +18,7 @@ from src.core.router import ElGuardianCNS
 from src.core.live_monitor import LiveThreatMonitor
 from src.core.community import SCAM_TYPES, stories, validate_story
 from src.agents.guardian_agent import ElGuardian
-from src.agents import goalie_chat, specialists
+from src.agents import goalie_chat, media, specialists
 
 cns = ElGuardianCNS()
 guardian = ElGuardian()
@@ -155,6 +155,69 @@ async def analyze(signal: str = Query(default="")):
     }
 
 
+@app.post("/analyze/file")
+async def analyze_file(
+    request: Request,
+    file: UploadFile = File(...),
+    note: str = Form(""),
+):
+    """El Guardián reads an uploaded photo, PDF, or video and gives its verdict,
+    then any triggered specialist gate adds its playbook. Files are analyzed in
+    memory and never stored."""
+    if not _allow(f"file:{_client_ip(request)}", limit=10, window_s=600):
+        raise HTTPException(status_code=429, detail="Too many uploads — give the shield a minute.")
+    raw = await file.read()
+    try:
+        kind = media.validate(file.content_type or "", len(raw))
+    except media.MediaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    context = _live_context()
+
+    def run_guardian() -> str:
+        client = guardian._get_client()
+        with media.MediaAttachment(client, raw, file.content_type) as parts:
+            return guardian.analyze(note, engaged=None, context=context or None, media=parts)
+
+    try:
+        verdict = await asyncio.to_thread(run_guardian)
+    except media.MediaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"El Guardián's vision core is offline: {exc}")
+
+    # The gates are keyword-driven, so read them off the note + what El Guardián
+    # saw in the file — that lets the right specialist chime in on the evidence.
+    signal_for_gates = f"{note} {verdict}".strip()
+    gates = cns.detect_gates(signal_for_gates)
+
+    def specialist_report(gate: str):
+        try:
+            scanner = cns.registry.run_agent(gate, signal_for_gates)
+            scanner.pop("raw", None)
+        except Exception:
+            scanner = None
+        return specialists.respond(gate, signal_for_gates, scanner)
+
+    results = (
+        await asyncio.gather(*(asyncio.to_thread(specialist_report, g) for g in gates))
+        if gates else []
+    )
+    agents = [
+        {"gate": g, "agent": cns.registry.agents[g]["name"], "response": r}
+        for g, r in zip(gates, results)
+        if r
+    ]
+    return {
+        "status": "ok",
+        "signal": note or f"[{kind} attached for analysis]",
+        "response": verdict,
+        "gates": gates,
+        "primary_gate": cns.choose_primary_gate(gates) if gates else None,
+        "agents": agents,
+    }
+
+
 # ── Rate limiting (troll shield) — sliding window per client IP ──────────
 _rate_hits: dict = defaultdict(deque)
 
@@ -227,6 +290,65 @@ async def goalie_chat_turn(body: GoalieChatIn, request: Request):
         lang=_lang_guess(body.message),
         msg_len=len(body.message),
         turns=len(history),
+        matches=len(matches),
+    )
+    return {
+        "status": "ok",
+        "agent": "Anti-Scammer Goalie",
+        "gate": "Gate A",
+        "response": response,
+        "community_matches": len(matches),
+    }
+
+
+@app.post("/goalie/chat/file")
+async def goalie_chat_file(
+    request: Request,
+    file: UploadFile = File(...),
+    message: str = Form(""),
+    history: str = Form("[]"),
+):
+    """The Goalie's chat lane with an attached photo, PDF, or video — it reads the
+    file as evidence and answers in the same turn. History arrives as a JSON
+    string alongside the multipart file. Nothing is stored."""
+    if not _allow(f"chat:{_client_ip(request)}", limit=20, window_s=600):
+        raise HTTPException(status_code=429, detail="The Goalie needs a breather — try again in a few minutes.")
+    raw = await file.read()
+    try:
+        media.validate(file.content_type or "", len(raw))
+    except media.MediaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    try:
+        parsed = json.loads(history) if history else []
+    except (ValueError, TypeError):
+        parsed = []
+    hist = [
+        {"role": t.get("role", "user"), "text": t.get("text", "")}
+        for t in (parsed if isinstance(parsed, list) else [])
+        if isinstance(t, dict)
+    ][-12:]
+
+    matches = stories.match(message or "")
+    intel = goalie_chat.build_intel_block(matches, stories.stats())
+
+    def run_goalie() -> str:
+        client = specialists._get_client()
+        with media.MediaAttachment(client, raw, file.content_type) as parts:
+            return goalie_chat.chat(message, hist, intel, media=parts)
+
+    try:
+        response = await asyncio.to_thread(run_goalie)
+    except media.MediaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"The Goalie's vision core is offline: {exc}")
+
+    stories.log_event(
+        "chat_file",
+        lang=_lang_guess(message or ""),
+        msg_len=len(message or ""),
+        turns=len(hist),
         matches=len(matches),
     )
     return {
