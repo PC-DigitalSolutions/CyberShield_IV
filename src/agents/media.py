@@ -24,6 +24,27 @@ ALLOWED_IMAGE = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/he
 ALLOWED_VIDEO = {"video/mp4", "video/quicktime", "video/webm", "video/x-msvideo", "video/mpeg", "video/3gpp"}
 ALLOWED_PDF = {"application/pdf"}
 
+# Phone file pickers routinely hand us "" or "application/octet-stream" instead of
+# a real type — especially for PDFs. Fall back to the filename extension so a
+# perfectly good upload isn't rejected, and so Gemini gets a usable mime_type.
+EXT_MIME = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".heic": "image/heic",
+    ".heif": "image/heif",
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".3gp": "video/3gpp",
+    ".mpeg": "video/mpeg",
+    ".mpg": "video/mpeg",
+    ".avi": "video/x-msvideo",
+}
+
 
 class MediaError(Exception):
     """Raised when an upload is rejected (bad type or too large)."""
@@ -40,9 +61,19 @@ def kind_for(mime: str) -> str | None:
     return None
 
 
-def validate(mime: str, size: int) -> str:
-    """Return the media kind, or raise MediaError with a human message."""
-    kind = kind_for(mime)
+def resolve_mime(mime: str, filename: str = "") -> str:
+    """Best-effort real mime type: trust a known one, else read the extension."""
+    m = (mime or "").lower().split(";")[0].strip()
+    if kind_for(m):
+        return m
+    ext = os.path.splitext(filename or "")[1].lower()
+    return EXT_MIME.get(ext, m)
+
+
+def validate(mime: str, size: int, filename: str = "") -> tuple[str, str]:
+    """Return (kind, resolved_mime), or raise MediaError with a human message."""
+    resolved = resolve_mime(mime, filename)
+    kind = kind_for(resolved)
     if not kind:
         raise MediaError(
             "Unsupported file type. Send a photo (JPG/PNG/WebP/HEIC), a PDF, or a video (MP4/MOV/WebM)."
@@ -52,7 +83,7 @@ def validate(mime: str, size: int) -> str:
         raise MediaError(f"That {kind} is too large — keep it under {cap // MB}MB.")
     if size <= 0:
         raise MediaError("The file appears to be empty.")
-    return kind
+    return kind, resolved
 
 
 class MediaAttachment:
@@ -64,11 +95,12 @@ class MediaAttachment:
             client.models.generate_content(..., contents=[text, *parts])
     """
 
-    def __init__(self, client, raw: bytes, mime: str):
+    def __init__(self, client, raw: bytes, mime: str, filename: str = ""):
         self.client = client
         self.raw = raw
-        self.mime = (mime or "").lower().split(";")[0].strip()
-        self.kind = validate(self.mime, len(raw))
+        # Resolve first so Gemini always receives a real mime_type, even when the
+        # phone sent "" or application/octet-stream.
+        self.kind, self.mime = validate(mime, len(raw), filename)
         self._remote_name: str | None = None
 
     def __enter__(self) -> list:

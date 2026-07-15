@@ -168,7 +168,7 @@ async def analyze_file(
         raise HTTPException(status_code=429, detail="Too many uploads — give the shield a minute.")
     raw = await file.read()
     try:
-        kind = media.validate(file.content_type or "", len(raw))
+        kind, _mime = media.validate(file.content_type or "", len(raw), file.filename or "")
     except media.MediaError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -176,7 +176,7 @@ async def analyze_file(
 
     def run_guardian() -> str:
         client = guardian._get_client()
-        with media.MediaAttachment(client, raw, file.content_type) as parts:
+        with media.MediaAttachment(client, raw, file.content_type, file.filename or "") as parts:
             return guardian.analyze(note, engaged=None, context=context or None, media=parts)
 
     try:
@@ -315,7 +315,7 @@ async def goalie_chat_file(
         raise HTTPException(status_code=429, detail="The Goalie needs a breather — try again in a few minutes.")
     raw = await file.read()
     try:
-        media.validate(file.content_type or "", len(raw))
+        media.validate(file.content_type or "", len(raw), file.filename or "")
     except media.MediaError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -334,7 +334,7 @@ async def goalie_chat_file(
 
     def run_goalie() -> str:
         client = specialists._get_client()
-        with media.MediaAttachment(client, raw, file.content_type) as parts:
+        with media.MediaAttachment(client, raw, file.content_type, file.filename or "") as parts:
             return goalie_chat.chat(message, hist, intel, media=parts)
 
     try:
