@@ -18,17 +18,39 @@ MB = 1024 * 1024
 # is ~20MB); video is routed through the Files API so it can be larger.
 MAX_IMAGE_BYTES = 15 * MB
 MAX_PDF_BYTES = 18 * MB
+MAX_DOC_BYTES = 18 * MB
 MAX_VIDEO_BYTES = 50 * MB
 
 ALLOWED_IMAGE = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 ALLOWED_VIDEO = {"video/mp4", "video/quicktime", "video/webm", "video/x-msvideo", "video/mpeg", "video/3gpp"}
 ALLOWED_PDF = {"application/pdf"}
+# Text documents Gemini reads natively — a saved threat report, an exported
+# email, a CSV of indicators.
+ALLOWED_DOC = {
+    "text/html",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+    "text/xml",
+    "application/xml",
+    "application/json",
+    "application/rtf",
+    "text/rtf",
+}
 
 # Phone file pickers routinely hand us "" or "application/octet-stream" instead of
 # a real type — especially for PDFs. Fall back to the filename extension so a
 # perfectly good upload isn't rejected, and so Gemini gets a usable mime_type.
 EXT_MIME = {
     ".pdf": "application/pdf",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".xml": "text/xml",
+    ".rtf": "application/rtf",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -56,6 +78,8 @@ def kind_for(mime: str) -> str | None:
         return "image"
     if mime in ALLOWED_PDF:
         return "pdf"
+    if mime in ALLOWED_DOC:
+        return "doc"
     if mime in ALLOWED_VIDEO:
         return "video"
     return None
@@ -76,9 +100,15 @@ def validate(mime: str, size: int, filename: str = "") -> tuple[str, str]:
     kind = kind_for(resolved)
     if not kind:
         raise MediaError(
-            "Unsupported file type. Send a photo (JPG/PNG/WebP/HEIC), a PDF, or a video (MP4/MOV/WebM)."
+            "Unsupported file type. Send a photo (JPG/PNG/WebP/HEIC), a document "
+            "(PDF/HTML/TXT/CSV), or a video (MP4/MOV/WebM)."
         )
-    cap = {"image": MAX_IMAGE_BYTES, "pdf": MAX_PDF_BYTES, "video": MAX_VIDEO_BYTES}[kind]
+    cap = {
+        "image": MAX_IMAGE_BYTES,
+        "pdf": MAX_PDF_BYTES,
+        "doc": MAX_DOC_BYTES,
+        "video": MAX_VIDEO_BYTES,
+    }[kind]
     if size > cap:
         raise MediaError(f"That {kind} is too large — keep it under {cap // MB}MB.")
     if size <= 0:

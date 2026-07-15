@@ -113,8 +113,12 @@ class ElGuardian:
             )
         if context:
             contents = (
-                f"{contents}\n\n[LIVE INTEL FEED — real, current tournament data. Use it as "
-                f"ground truth for fixtures, standings, and active threats]:\n{context}"
+                f"{contents}\n\n[LIVE INTEL FEED — CyberShield's OWN telemetry, appended "
+                f"automatically by the system. The user did NOT send this and has not seen "
+                f"it. Never thank them for it, never call it their intel or 'the drop', and "
+                f"never imply they shared it. Use it only as ground truth for fixtures, "
+                f"standings, and active threats when their message actually asks about those "
+                f"— otherwise ignore it and answer what they actually said]:\n{context}"
             )
         try:
             client = self._get_client()
