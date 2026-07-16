@@ -63,22 +63,30 @@ if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/")
-async def root():
-    """The real dashboard lives in the Next.js app."""
-    return RedirectResponse(FRONTEND_URL)
-
-
 PORTFOLIO_PAGE = os.path.join("backend", "templates", "portfolio.html")
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Front door — the CyberShield AI portfolio landing page. Falls back to
+    the Next.js dashboard if the page is missing."""
+    if os.path.exists(PORTFOLIO_PAGE):
+        return FileResponse(PORTFOLIO_PAGE, media_type="text/html")
+    return RedirectResponse(FRONTEND_URL)
 
 
 @app.get("/portfolio", include_in_schema=False)
 async def portfolio():
-    """Static brand/portfolio landing page — CyberShield AI design showcase.
-    Served from backend/templates; assets come from the mounted /static dir."""
+    """Alias for the portfolio landing page served at /."""
     if os.path.exists(PORTFOLIO_PAGE):
         return FileResponse(PORTFOLIO_PAGE, media_type="text/html")
     raise HTTPException(status_code=404, detail="portfolio page not found")
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard():
+    """Command Center — the real dashboard lives in the Next.js app."""
+    return RedirectResponse(FRONTEND_URL)
 
 
 @app.get("/status")
