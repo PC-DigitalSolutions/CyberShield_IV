@@ -112,10 +112,6 @@ _SEEDS = [
      "'mom had a medical emergency' and he needed $200 by Zelle. When I "
      "hesitated he got angry and guilt-tripped me. Classic romance play — "
      "the profile disappeared the next day.", "dating", "en"),
-    ("Conocí a alguien en una app, pasamos a videollamada y grabó la sesión "
-     "sin que yo supiera. Después amenazó con mandársela a mi familia si no "
-     "pagaba $300. NO pagué: guardé la evidencia, lo bloqueé y lo reporté a "
-     "la app. Nunca mandó nada — es su juego de miedo.", "sextortion", "es"),
 ]
 
 
