@@ -13,6 +13,8 @@ Two-stage design (keeps the Gemini quota safe):
 """
 
 import asyncio
+import json
+import os
 import re
 import time
 import urllib.parse
@@ -108,7 +110,7 @@ MONITOR_PATTERNS = {
 
 
 class LiveThreatMonitor:
-    def __init__(self, cns, interval: int = 75):
+    def __init__(self, cns, interval: int = 75, log_path: Optional[str] = None):
         self.cns = cns
         self.interval = interval
         self.queries = QUERIES
@@ -118,9 +120,25 @@ class LiveThreatMonitor:
         self._seen: set = set()
         self.total_seen = 0
         self.total_flagged = 0
+        self.total_persisted = 0
         self.last_poll: float = 0.0
         self.last_error: Optional[str] = None
         self.running = False
+
+        # Durable archive. The in-memory deques above are a rolling window that
+        # resets on restart; this append-only JSONL log is the permanent record
+        # of every World-Cup-relevant headline the monitor assessed. Configure
+        # the path with CYBERSHIELD_THREAT_LOG, or set it to "off" to disable.
+        if log_path is None:
+            log_path = os.environ.get("CYBERSHIELD_THREAT_LOG", os.path.join("data", "threat_log.jsonl"))
+        if not log_path or str(log_path).strip().lower() in ("off", "none", "disabled"):
+            self.log_path: Optional[str] = None
+        else:
+            self.log_path = log_path
+            try:
+                os.makedirs(os.path.dirname(self.log_path) or ".", exist_ok=True)
+            except OSError as exc:  # keep the path; writes will retry and report
+                self.last_error = f"log init: {exc}"
 
     # ── fetching ────────────────────────────────────────────
     def _fetch(self, query: str) -> Optional[bytes]:
@@ -236,9 +254,69 @@ class LiveThreatMonitor:
         else:
             self._intel.appendleft(record)
 
+        # Write it to the durable archive before it can age out of the window.
+        self._persist(record)
+
         # keep the dedup set from growing unbounded over a long session
         if len(self._seen) > 4000:
             self._seen = set(list(self._seen)[-2000:])
+
+    # ── durable archive ─────────────────────────────────────
+    def _persist(self, record: Dict[str, Any]) -> None:
+        """Append one assessed record to the JSONL archive.
+
+        Best-effort: a disk error is recorded to last_error but never breaks the
+        poll loop. Every World-Cup-relevant headline the monitor classifies —
+        threat or intel — is written as one JSON line, giving a permanent,
+        append-only history that survives process restarts, unlike the
+        in-memory rolling window the dashboard reads from.
+        """
+        if not self.log_path:
+            return
+        try:
+            with open(self.log_path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self.total_persisted += 1
+        except OSError as exc:
+            self.last_error = f"log write: {exc}"
+
+    def history(self, limit: int = 100, kind: Optional[str] = None) -> Dict[str, Any]:
+        """Read back the durable archive, newest first.
+
+        `kind` filters to "threat" or "intel". Reads the whole log and returns
+        the tail — fine at feed scale; swap for an indexed store if the archive
+        ever grows large.
+        """
+        limit = max(1, min(limit, 1000))
+        if not self.log_path or not os.path.exists(self.log_path):
+            return {"status": "empty", "log_path": self.log_path, "count": 0,
+                    "returned": 0, "records": []}
+        records: List[Dict[str, Any]] = []
+        try:
+            with open(self.log_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue  # skip a torn/partial line
+                    if kind and rec.get("kind") != kind:
+                        continue
+                    records.append(rec)
+        except OSError as exc:
+            return {"status": "error", "log_path": self.log_path,
+                    "error": str(exc), "count": 0, "returned": 0, "records": []}
+        total = len(records)
+        tail = records[-limit:][::-1]  # newest first
+        return {
+            "status": "ok",
+            "log_path": self.log_path,
+            "count": total,
+            "returned": len(tail),
+            "records": tail,
+        }
 
     # ── loop ────────────────────────────────────────────────
     async def poll_once(self) -> None:
@@ -283,6 +361,8 @@ class LiveThreatMonitor:
             "queries": len(self.queries),
             "total_seen": self.total_seen,
             "total_flagged": self.total_flagged,
+            "total_persisted": self.total_persisted,
+            "archive_enabled": bool(self.log_path),
             "active_threats": len(threats),
             "active_intel": len(intel),
             "last_error": self.last_error,

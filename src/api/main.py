@@ -81,6 +81,17 @@ async def threats_live(limit: int = Query(default=25, ge=1, le=80)):
     return monitor.snapshot(limit)
 
 
+@app.get("/threats/history")
+async def threats_history(
+    limit: int = Query(default=100, ge=1, le=1000),
+    kind: str = Query(default="", description="Filter to 'threat' or 'intel'"),
+):
+    """Durable archive of every World Cup headline the monitor has assessed,
+    newest first. Append-only JSONL that survives restarts — unlike the
+    in-memory /threats/live window."""
+    return monitor.history(limit, kind or None)
+
+
 def _live_context() -> str:
     """Real-time tournament context fed to El Guardián so it can answer schedule,
     standings, and threat questions from live data instead of guessing."""
