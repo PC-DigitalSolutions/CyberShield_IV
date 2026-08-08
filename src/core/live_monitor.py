@@ -1,9 +1,11 @@
 """
-LiveThreatMonitor — proactive World Cup threat awareness for CyberShield_IV.
+LiveThreatMonitor — proactive worldwide event & concert threat awareness for
+CyberShield_IV.
 
-Polls Google News RSS for World Cup threat + sponsor-tech signal, runs every
-headline through the existing CNS gates (cheap, no LLM), and keeps a rolling
-feed of flagged threats + intel for the dashboard to consume.
+Polls Google News RSS for fan-directed scam signal around concert tours,
+festivals, and major sporting events, runs every headline through the existing
+CNS gates (cheap, no LLM), and keeps a rolling feed of flagged threats + intel
+for the dashboard to consume.
 
 Two-stage design (keeps the Gemini quota safe):
   1. Cheap keyword gate (cns.detect_gates) classifies EVERY incoming headline.
@@ -25,64 +27,66 @@ from typing import Any, Dict, List, Optional
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
-# Search terms that surface World Cup threat signal + sponsor-tech intel.
-# Every query is anchored to the World Cup, and a relevance filter (below)
-# drops anything whose headline isn't actually about the tournament — so the
-# feed stays World-Cup-only instead of generic cyber news.
+# Search terms that surface worldwide live-event & concert threat signal —
+# fan-directed scams around concert tours, festivals, and major sporting events.
+# Every query is event-anchored, and a relevance filter (below) drops anything
+# whose headline isn't actually about live events — so the feed stays
+# event/concert-scoped instead of turning into generic cyber news.
 QUERIES: List[str] = [
-    "FIFA World Cup 2026 scam",
-    "FIFA World Cup 2026 ticket fraud",
-    "FIFA World Cup 2026 phishing",
-    "FIFA World Cup 2026 fake tickets",
-    "FIFA World Cup 2026 cyberattack",
-    "FIFA World Cup 2026 cybersecurity",
-    "FIFA World Cup 2026 data breach",
-    "FIFA World Cup 2026 deepfake",
-    "FIFA World Cup 2026 fan safety",
-    "FIFA World Cup 2026 news",
-    "Lenovo FIFA World Cup 2026",
-    "FIFA World Cup 2026 technology",
+    "concert ticket scam",
+    "concert presale scam",
+    "tour ticket fraud",
+    "festival ticket scam",
+    "event ticket phishing",
+    "fake concert tickets",
+    "ticket resale fraud",
+    "meet and greet scam",
+    "deepfake celebrity giveaway",
+    "sports event ticket fraud",
+    "Ticketmaster scam",
+    "sold out show ticket scam",
 ]
 
-# A headline must mention the tournament to enter the feed. This is what makes
-# the feed "World-Cup-only" — generic DDoS/breach news gets dropped.
-WC_RELEVANCE = re.compile(
-    r"world cup|\bfifa\b|mundial|wc\s?2026|2026 world cup|world cup 2026",
+# A headline must be about a live event to enter the feed. This is what keeps
+# the feed event/concert-scoped — generic, unrelated cyber news gets dropped.
+EVENT_RELEVANCE = re.compile(
+    r"ticket|concert|tour|festival|\bevent\b|presale|pre-sale|fan|\bshow\b|"
+    r"arena|stadium|world cup|olympic|super bowl|match|gig|venue|artist",
     re.I,
 )
 
 GATE_SEVERITY = {
-    "Gate C": "CRITICAL",  # Red Card Sentinel — synthetic media
-    "Gate A": "HIGH",      # Anti-Scammer Goalie — fraud / phishing
-    "Gate D": "HIGH",      # Las Barras Bravas Triage — traffic / DDoS
-    "Gate B": "MEDIUM",    # Sideline Referee — compliance / data
+    "Gate C": "CRITICAL",  # Deepfake Sentinel — synthetic media
+    "Gate A": "HIGH",      # Anti-Scam Sentinel — fraud / phishing
+    "Gate D": "HIGH",      # Infrastructure Sentinel — traffic / DDoS
+    "Gate B": "MEDIUM",    # Compliance Sentinel — compliance / data
 }
 
 # Plain-English, public-facing advice per gate. Multiple lines per agent so the
 # feed doesn't repeat the same tip — one is chosen per headline (stable).
 GATE_ADVICE = {
-    "Gate A": [  # Anti-Scammer Goalie
-        "Buy tickets only on FIFA's official site. Never pay by gift card or crypto, and never share verification codes.",
+    "Gate A": [  # Anti-Scam Sentinel
+        "Buy tickets only from the venue's or artist's official seller. Never pay by gift card, crypto, or bank transfer, and never share verification codes.",
         "If a ticket deal pressures you to 'act fast or lose it,' that urgency is the scam. Walk away.",
-        "Reselling? Use only FIFA's official resale platform — fake QR codes won't scan at the gate.",
+        "Reselling? Use only the event's official resale platform — screenshots and fake QR codes won't scan at the gate.",
     ],
-    "Gate B": [  # Sideline Referee
+    "Gate B": [  # Compliance Sentinel
         "Turn on two-factor authentication and use a unique password for ticket and travel accounts.",
         "Never reuse your email password elsewhere — one breach then unlocks everything you own.",
         "Got an email to 'verify your details'? Open the site yourself instead of clicking the link.",
     ],
-    "Gate C": [  # Red Card Sentinel
-        "Pause before sharing shocking clips — confirm them on official team or FIFA accounts first.",
-        "AI-faked player 'announcements' spread fast. Check the verified source before you believe it.",
+    "Gate C": [  # Deepfake Sentinel
+        "Pause before sharing shocking clips — confirm them on the artist's or organizer's official accounts first.",
+        "AI-faked 'announcements' and giveaways spread fast. Check the verified source before you believe it.",
         "If a video seems built to enrage or panic you, treat it as fake until you've verified it.",
     ],
-    "Gate D": [  # Las Barras Bravas Triage
-        "Expect slow official sites near kickoff. Ignore 'instant access' links claiming to fix outages.",
-        "During traffic surges, trust only the official app — fake mirror sites exist to harvest logins.",
-        "A 'your account is locked, click here' message during a match is a classic pressure scam.",
+    "Gate D": [  # Infrastructure Sentinel
+        "Expect slow official sites at on-sale time. Ignore 'instant access' links claiming to fix outages.",
+        "During traffic surges, trust only the official app or site — fake mirror sites exist to harvest logins.",
+        "A 'your account is locked, click here' message during an on-sale is a classic pressure scam.",
     ],
 }
-INTEL_ADVICE = "Stay match-ready — follow official FIFA and team channels for verified updates."
+INTEL_ADVICE = "Stay event-ready — follow official venue, artist, and organizer channels for verified updates."
 
 # Plural/stem-tolerant patterns for headline triage. The CNS gates use strict
 # word-boundary keywords tuned for user-submitted signals; news headlines need
@@ -220,8 +224,8 @@ class LiveThreatMonitor:
         self._seen.add(ident)
         self.total_seen += 1
 
-        # World-Cup-only: drop anything not about the tournament.
-        if not WC_RELEVANCE.search(it["title"]):
+        # Event/concert-scoped: drop anything not about a live event.
+        if not EVENT_RELEVANCE.search(it["title"]):
             return
 
         title = self._clean_title(it["title"])

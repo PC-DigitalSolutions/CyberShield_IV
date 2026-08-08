@@ -12,19 +12,19 @@ class AgentRegistry:
     def __init__(self):
         self.registry = {
             "Gate C": {
-                "agent": "Red Card Sentinel",
+                "agent": "Deepfake Sentinel",
                 "handler": sentinel_detect,
             },
             "Gate A": {
-                "agent": "Anti-Scammer Goalie",
+                "agent": "Anti-Scam Sentinel",
                 "handler": goalie_scan,
             },
             "Gate B": {
-                "agent": "Sideline Referee",
+                "agent": "Compliance Sentinel",
                 "handler": referee_evaluate,
             },
             "Gate D": {
-                "agent": "Las Barras Bravas Triage",
+                "agent": "Infrastructure Sentinel",
                 "handler": triage_process,
             },
         }

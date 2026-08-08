@@ -19,7 +19,7 @@ class AgentRegistry:
     def __init__(self):
         self.agents = {
             "Gate A": {
-                "name": "Anti-Scammer Goalie",
+                "name": "Anti-Scam Sentinel",
                 "module_path": "src.goalie",
                 "mitre_attack_id": "T1566",
                 "default_severity": "High",
@@ -30,7 +30,7 @@ class AgentRegistry:
                 ],
             },
             "Gate B": {
-                "name": "Sideline Referee",
+                "name": "Compliance Sentinel",
                 "module_path": "src.referee",
                 "mitre_attack_id": "T1020",
                 "default_severity": "Medium",
@@ -41,7 +41,7 @@ class AgentRegistry:
                 ],
             },
             "Gate C": {
-                "name": "Red Card Sentinel",
+                "name": "Deepfake Sentinel",
                 "module_path": "src.sentinel",
                 "mitre_attack_id": "T1608.005",
                 "default_severity": "Critical",
@@ -52,7 +52,7 @@ class AgentRegistry:
                 ],
             },
             "Gate D": {
-                "name": "Las Barras Bravas Triage",
+                "name": "Infrastructure Sentinel",
                 "module_path": "src.triage",
                 "mitre_attack_id": "T1498",
                 "default_severity": "High",
