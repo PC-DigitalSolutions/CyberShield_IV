@@ -1,4 +1,4 @@
-"""Community scam-story store — the Anti-Scammer Goalie's training ground.
+"""Community scam-story store — the Anti-Scam Sentinel's training ground.
 
 Fans share the scams that hit them or their families (with explicit consent).
 Stories are scrubbed of PII, stored durably, and fed back into the Goalie's
@@ -91,19 +91,18 @@ def validate_story(story: str) -> str | None:
 # Seed stories so the community feed and the Goalie's intel are never empty
 # on a fresh deploy. Marked source="seed" and shown like any other report.
 _SEEDS = [
-    ("Got a WhatsApp saying I won 2 tickets to the World Cup final, just pay a "
-     "$50 'processing fee' through a link. The site looked exactly like FIFA's "
-     "but the URL was fifa-tickets2026.win.", "tickets", "en"),
-    ("Me llegó un SMS de 'FIFA' diciendo que mi boleto fue cancelado y que "
-     "tenía que verificar mi tarjeta en 24 horas o perdía mi lugar. El enlace "
-     "pedía el número completo y el CVV.", "smishing", "es"),
-    ("A 'FIFA volunteer coordinator' on Instagram offered my cousin paid work "
-     "at the Dallas matches. They asked for her passport photo and a $120 "
+    ("Got a WhatsApp saying I won 2 front-row tickets to a sold-out concert, "
+     "just pay a $50 'processing fee' through a link. The site looked official "
+     "but the URL was tour-tickets2026.win.", "tickets", "en"),
+    ("Me llegó un SMS diciendo que mi boleto para el concierto fue cancelado y "
+     "que tenía que verificar mi tarjeta en 24 horas o perdía mi lugar. El "
+     "enlace pedía el número completo y el CVV.", "smishing", "es"),
+    ("A 'tour street-team coordinator' on Instagram offered my cousin paid promo "
+     "work at an arena show. They asked for her passport photo and a $120 "
      "'uniform deposit' up front. No such program exists.", "impersonation", "en"),
-    ("Un tipo en Facebook Marketplace vendía boletos 'verificados' para "
-     "México vs Argentina en el Azteca. Pedía la mitad por transferencia "
-     "antes de mandar el QR. El QR que mandó era una captura reciclada.",
-     "tickets", "es"),
+    ("Un tipo en Facebook Marketplace vendía boletos 'verificados' para un "
+     "concierto agotado. Pedía la mitad por transferencia antes de mandar el "
+     "QR. El QR que mandó era una captura reciclada.", "tickets", "es"),
     ("A 'sugar daddy' on Instagram offered me $500 a week just to chat. All I "
      "had to do was buy a $50 gift card first to 'prove loyalty' — then he'd "
      "'refund it with my first allowance.' Blocked him, but he had hundreds "

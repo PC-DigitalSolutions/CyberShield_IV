@@ -286,10 +286,10 @@ class GoalieReportIn(BaseModel):
 
 @app.post("/goalie/chat")
 async def goalie_chat_turn(body: GoalieChatIn, request: Request):
-    """The Anti-Scammer Goalie's own chat lane — multi-turn, grounded in
+    """The Anti-Scam Sentinel's own chat lane — multi-turn, grounded in
     community-reported scam stories. History travels with the request."""
     if not _allow(f"chat:{_client_ip(request)}", limit=20, window_s=600):
-        raise HTTPException(status_code=429, detail="The Goalie needs a breather — try again in a few minutes.")
+        raise HTTPException(status_code=429, detail="The Anti-Scam Sentinel needs a breather — try again in a few minutes.")
     matches = stories.match(body.message)
     intel = goalie_chat.build_intel_block(matches, stories.stats())
     history = [t.model_dump() for t in body.history]
@@ -305,7 +305,7 @@ async def goalie_chat_turn(body: GoalieChatIn, request: Request):
     )
     return {
         "status": "ok",
-        "agent": "Anti-Scammer Goalie",
+        "agent": "Anti-Scam Sentinel",
         "gate": "Gate A",
         "response": response,
         "community_matches": len(matches),
@@ -319,11 +319,11 @@ async def goalie_chat_file(
     message: str = Form(""),
     history: str = Form("[]"),
 ):
-    """The Goalie's chat lane with an attached photo, PDF, or video — it reads the
+    """The Anti-Scam Sentinel's chat lane with an attached photo, PDF, or video — it reads the
     file as evidence and answers in the same turn. History arrives as a JSON
     string alongside the multipart file. Nothing is stored."""
     if not _allow(f"chat:{_client_ip(request)}", limit=20, window_s=600):
-        raise HTTPException(status_code=429, detail="The Goalie needs a breather — try again in a few minutes.")
+        raise HTTPException(status_code=429, detail="The Anti-Scam Sentinel needs a breather — try again in a few minutes.")
     raw = await file.read()
     try:
         media.validate(file.content_type or "", len(raw), file.filename or "")
@@ -353,7 +353,7 @@ async def goalie_chat_file(
     except media.MediaError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"The Goalie's vision core is offline: {exc}")
+        raise HTTPException(status_code=503, detail=f"The Anti-Scam Sentinel's vision core is offline: {exc}")
 
     stories.log_event(
         "chat_file",
@@ -364,7 +364,7 @@ async def goalie_chat_file(
     )
     return {
         "status": "ok",
-        "agent": "Anti-Scammer Goalie",
+        "agent": "Anti-Scam Sentinel",
         "gate": "Gate A",
         "response": response,
         "community_matches": len(matches),
@@ -374,7 +374,7 @@ async def goalie_chat_file(
 @app.post("/goalie/report")
 async def goalie_report(body: GoalieReportIn, request: Request):
     """Consented, anonymized community scam-story submission. Stories are
-    PII-scrubbed on write and feed the Goalie's chat intel."""
+    PII-scrubbed on write and feed the Anti-Scam Sentinel's chat intel."""
     if not body.consent:
         raise HTTPException(status_code=400, detail="consent required")
     if not _allow(f"report:{_client_ip(request)}", limit=5, window_s=3600):
