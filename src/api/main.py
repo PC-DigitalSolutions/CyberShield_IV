@@ -27,7 +27,7 @@ monitor = LiveThreatMonitor(cns)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the live World Cup threat monitor in the background.
+    # Start the live event/concert threat monitor in the background.
     task = asyncio.create_task(monitor.run_forever())
     try:
         yield
@@ -76,7 +76,7 @@ async def status():
 
 @app.get("/threats/live")
 async def threats_live(limit: int = Query(default=25, ge=1, le=80)):
-    """Rolling feed of live World Cup threats + intel, sourced from Google News
+    """Rolling feed of live event/concert threats + intel, sourced from Google News
     RSS and classified through the CNS gates. Polled by the dashboard."""
     return monitor.snapshot(limit)
 
@@ -86,15 +86,15 @@ async def threats_history(
     limit: int = Query(default=100, ge=1, le=1000),
     kind: str = Query(default="", description="Filter to 'threat' or 'intel'"),
 ):
-    """Durable archive of every World Cup headline the monitor has assessed,
+    """Durable archive of every event/concert headline the monitor has assessed,
     newest first. Append-only JSONL that survives restarts — unlike the
     in-memory /threats/live window."""
     return monitor.history(limit, kind or None)
 
 
 def _live_context() -> str:
-    """Real-time tournament context fed to El Guardián so it can answer schedule,
-    standings, and threat questions from live data instead of guessing."""
+    """Real-time threat context fed to El Guardián so it can answer from the live
+    monitor's active threats instead of guessing."""
     parts = []
 
     snap = monitor.snapshot(limit=80)
@@ -102,30 +102,6 @@ def _live_context() -> str:
     if threats:
         lines = [f"- [{t['severity']}] {t['title']} (handled by {t['agent']})" for t in threats[:5]]
         parts.append(f"ACTIVE THREATS ({snap.get('active_threats', 0)} live now):\n" + "\n".join(lines))
-
-    data = _matches_cache.get("data")
-    if data and data.get("source") == "live":
-        up = data.get("upcoming") or []
-        if up:
-            lines = []
-            for m in up[:6]:
-                lvl = (m.get("threat") or {}).get("level", "")
-                grp = m.get("group", "")
-                lines.append(
-                    f"- {m['home']['name']} vs {m['away']['name']} — {m.get('utcDate', 'TBD')} UTC"
-                    f"{(' · ' + grp) if grp else ''}{(' · CyberShield threat: ' + lvl) if lvl else ''}"
-                )
-            parts.append("UPCOMING FIXTURES (no host city in feed — dates/teams/groups only):\n" + "\n".join(lines))
-        st = data.get("standings") or []
-        if st:
-            lines = []
-            for g in st[:12]:
-                top = ", ".join(
-                    f"{r['team']['code'] or r['team']['name']} ({r['points']}pts)"
-                    for r in g.get("table", [])[:2]
-                )
-                lines.append(f"- {g['group']}: {top}")
-            parts.append("STANDINGS (top 2 per group):\n" + "\n".join(lines))
 
     return "\n\n".join(parts)
 
@@ -284,7 +260,7 @@ class GoalieReportIn(BaseModel):
     consent: bool = False
 
 
-@app.post("/goalie/chat")
+@app.post("/sentinel/chat")
 async def goalie_chat_turn(body: GoalieChatIn, request: Request):
     """The Anti-Scam Sentinel's own chat lane — multi-turn, grounded in
     community-reported scam stories. History travels with the request."""
@@ -312,7 +288,7 @@ async def goalie_chat_turn(body: GoalieChatIn, request: Request):
     }
 
 
-@app.post("/goalie/chat/file")
+@app.post("/sentinel/chat/file")
 async def goalie_chat_file(
     request: Request,
     file: UploadFile = File(...),
@@ -371,7 +347,7 @@ async def goalie_chat_file(
     }
 
 
-@app.post("/goalie/report")
+@app.post("/sentinel/report")
 async def goalie_report(body: GoalieReportIn, request: Request):
     """Consented, anonymized community scam-story submission. Stories are
     PII-scrubbed on write and feed the Anti-Scam Sentinel's chat intel."""
@@ -393,7 +369,7 @@ async def goalie_report(body: GoalieReportIn, request: Request):
     return {"status": "ok", "id": story_id, **stories.stats()}
 
 
-@app.get("/goalie/stories")
+@app.get("/sentinel/stories")
 async def goalie_stories(limit: int = Query(default=20, ge=1, le=50)):
     """Anonymized community scam-story wall + counts."""
     return {
@@ -404,7 +380,7 @@ async def goalie_stories(limit: int = Query(default=20, ge=1, le=50)):
     }
 
 
-@app.get("/goalie/beta-report")
+@app.get("/sentinel/beta-report")
 async def goalie_beta_report(request: Request, key: str = Query(default=""),
                              days: int = Query(default=14, ge=1, le=90)):
     """Beta program report — what testers are doing, aggregated metadata only
@@ -414,7 +390,7 @@ async def goalie_beta_report(request: Request, key: str = Query(default=""),
     return stories.beta_report(days)
 
 
-@app.post("/goalie/stories/{story_id}/hide")
+@app.post("/sentinel/stories/{story_id}/hide")
 async def goalie_hide_story(story_id: int, request: Request, key: str = Query(default="")):
     """Moderation: soft-remove a story from the public wall."""
     if not _admin_ok(key, request):
@@ -424,227 +400,6 @@ async def goalie_hide_story(story_id: int, request: Request, key: str = Query(de
     stories.log_event("story_hidden", story_id=story_id)
     return {"status": "ok", "hidden": story_id, **stories.stats()}
 
-
-FOOTBALL_API = "https://api.football-data.org/v4/competitions/WC/matches"
-_matches_cache: dict = {"ts": 0.0, "data": None}
-
-
-def _fetch_matches(status: str, token: str) -> dict:
-    req = urllib.request.Request(
-        f"{FOOTBALL_API}?status={status}",
-        headers={"X-Auth-Token": token},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
-
-
-def _fetch_scorers(token: str) -> dict:
-    req = urllib.request.Request(
-        f"https://api.football-data.org/v4/competitions/WC/scorers?limit=8",
-        headers={"X-Auth-Token": token},
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read())
-
-
-def _team(t: dict) -> dict:
-    return {
-        "name": t.get("shortName") or t.get("name") or "TBD",
-        "code": t.get("tla") or "",
-        "crest": t.get("crest") or "",
-    }
-
-
-def _fetch_standings(token: str) -> dict:
-    """Group standings. Swallows errors so a standings outage never takes the
-    whole /matches response down."""
-    try:
-        req = urllib.request.Request(
-            "https://api.football-data.org/v4/competitions/WC/standings",
-            headers={"X-Auth-Token": token},
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())
-    except Exception:
-        return {}
-
-
-_STAGE_BONUS = {
-    "FINAL": 45,
-    "THIRD_PLACE": 24,
-    "SEMI_FINALS": 35,
-    "QUARTER_FINALS": 26,
-    "LAST_16": 18,
-    "GROUP_STAGE": 6,
-}
-
-# (score floor, level) — first match wins, highest first
-_THREAT_LEVELS = [(82, "SEVERE"), (62, "HIGH"), (44, "ELEVATED"), (30, "GUARDED"), (0, "LOW")]
-
-
-def _assess_match(up: dict, threats: list, active_total: int) -> dict:
-    """CyberShield's per-match threat assessment — blends match prominence,
-    kickoff proximity, live-feed correlation (does any active threat name a
-    team in this fixture?), and the overall threat climate."""
-    score = 22 + _STAGE_BONUS.get(up.get("stage") or "", 8)
-
-    utc = up.get("utcDate")
-    if utc:
-        try:
-            from datetime import datetime, timezone
-            kickoff = datetime.fromisoformat(utc.replace("Z", "+00:00"))
-            hours = (kickoff - datetime.now(timezone.utc)).total_seconds() / 3600
-            if 0 <= hours <= 24:
-                score += 22
-            elif hours <= 72:
-                score += 12
-            elif hours <= 168:
-                score += 5
-        except Exception:
-            pass
-
-    names = [n.lower() for n in (up["home"]["name"], up["away"]["name"]) if len(n) > 2]
-    hits = sum(1 for t in threats if any(n in (t.get("title") or "").lower() for n in names))
-    score += min(18, hits * 9)
-    score += min(12, active_total // 10)
-    score = max(0, min(100, score))
-
-    level = next(name for floor, name in _THREAT_LEVELS if score >= floor)
-
-    counts: dict = {}
-    for t in threats:
-        g = t.get("primary_gate")
-        if g:
-            counts[g] = counts.get(g, 0) + 1
-    dom_gate = max(counts, key=counts.get) if counts else "Gate A"
-    try:
-        agent = cns.registry.agents[dom_gate]["name"]
-    except Exception:
-        agent = "El Guardián"
-
-    return {"level": level, "score": int(score), "gate": dom_gate, "agent": agent, "feed_hits": hits}
-
-
-@app.get("/matches")
-async def matches():
-    """Live + upcoming World Cup matches via football-data.org.
-    Returns {"source": "demo"} when no token is configured so the
-    frontend falls back to its built-in demo fixtures."""
-    token = os.environ.get("FOOTBALL_DATA_TOKEN", "")
-    if not token:
-        return {"source": "demo", "reason": "FOOTBALL_DATA_TOKEN not set"}
-
-    now = time.time()
-    if _matches_cache["data"] and now - _matches_cache["ts"] < 60:
-        return _matches_cache["data"]
-
-    try:
-        live_raw, sched_raw, finished_raw, scorers_raw, stand_raw = await asyncio.gather(
-            asyncio.to_thread(_fetch_matches, "LIVE", token),
-            asyncio.to_thread(_fetch_matches, "SCHEDULED", token),
-            asyncio.to_thread(_fetch_matches, "FINISHED", token),
-            asyncio.to_thread(_fetch_scorers, token),
-            asyncio.to_thread(_fetch_standings, token),
-        )
-        live = [
-            {
-                "home": _team(m["homeTeam"]),
-                "away": _team(m["awayTeam"]),
-                "score": {
-                    "home": m["score"]["fullTime"]["home"],
-                    "away": m["score"]["fullTime"]["away"],
-                },
-                "status": m.get("status", ""),
-                "minute": m.get("minute"),
-                "stage": m.get("stage", ""),
-                "group": (m.get("group") or "").replace("_", " "),
-                "venue": m.get("venue") or "",
-                "utcDate": m.get("utcDate"),
-            }
-            for m in live_raw.get("matches", [])
-        ]
-        upcoming = [
-            {
-                "home": _team(m["homeTeam"]),
-                "away": _team(m["awayTeam"]),
-                "stage": m.get("stage", ""),
-                "group": (m.get("group") or "").replace("_", " "),
-                "venue": m.get("venue") or "",
-                "utcDate": m.get("utcDate"),
-            }
-            for m in sorted(sched_raw.get("matches", []), key=lambda m: m.get("utcDate") or "")[:6]
-        ]
-        results = [
-            {
-                "home": _team(m["homeTeam"]),
-                "away": _team(m["awayTeam"]),
-                "score": {
-                    "home": m["score"]["fullTime"]["home"],
-                    "away": m["score"]["fullTime"]["away"],
-                },
-                "winner": m["score"].get("winner"),
-                "stage": m.get("stage", ""),
-                "group": (m.get("group") or "").replace("_", " "),
-                "utcDate": m.get("utcDate"),
-            }
-            for m in sorted(
-                finished_raw.get("matches", []),
-                key=lambda m: m.get("utcDate") or "",
-                reverse=True,
-            )[:6]
-        ]
-        scorers = [
-            {
-                "name": s["player"].get("name") or "",
-                "team": (s.get("team") or {}).get("tla") or "",
-                "crest": (s.get("team") or {}).get("crest") or "",
-                "goals": s.get("goals") or 0,
-            }
-            for s in scorers_raw.get("scorers", [])[:6]
-        ]
-        standings = []
-        for grp in stand_raw.get("standings", []):
-            if grp.get("type") and grp.get("type") != "TOTAL":
-                continue
-            standings.append(
-                {
-                    "group": (grp.get("group") or "").replace("_", " ").title(),
-                    "table": [
-                        {
-                            "position": r.get("position"),
-                            "team": _team(r.get("team") or {}),
-                            "played": r.get("playedGames"),
-                            "won": r.get("won"),
-                            "draw": r.get("draw"),
-                            "lost": r.get("lost"),
-                            "points": r.get("points"),
-                            "gd": r.get("goalDifference"),
-                        }
-                        for r in grp.get("table", [])
-                    ],
-                }
-            )
-
-        # Attach CyberShield's per-match threat assessment to each upcoming game.
-        snap = monitor.snapshot(limit=80)
-        feed_threats = snap.get("threats", [])
-        active_total = snap.get("active_threats", 0)
-        for up in upcoming:
-            up["threat"] = _assess_match(up, feed_threats, active_total)
-
-        data = {
-            "source": "live",
-            "live": live,
-            "upcoming": upcoming,
-            "results": results,
-            "scorers": scorers,
-            "standings": standings,
-        }
-        _matches_cache["ts"] = now
-        _matches_cache["data"] = data
-        return data
-    except Exception as exc:
-        return {"source": "demo", "reason": f"football-data error: {exc}"}
 
 
 @app.get("/route")
