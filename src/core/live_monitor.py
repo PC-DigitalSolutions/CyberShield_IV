@@ -32,27 +32,34 @@ GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 # (below) keeps genuine cyber/scam news in and drops Google's occasional
 # off-topic "related" items — so the feed stays current and varied instead of
 # recirculating the same narrow set of headlines every cycle.
+# Interleaved by domain (A/B/C/D/event) rather than grouped, because
+# poll_once ingests queries in order and appendleft's each new item — so the
+# queries near the END of this list land at the FRONT of the feed. Alternating
+# domains keeps the top of the feed mixed instead of dominated by whichever
+# Sentinel happens to be listed last. Gate tag in the comment for each.
 QUERIES: List[str] = [
-    # Anti-Scam Sentinel (Gate A)
-    "phishing scam",
-    "online fraud",
-    "impersonation scam",
-    "crypto scam",
-    # Compliance / breach Sentinel (Gate B)
-    "data breach",
-    "ransomware attack",
-    "data leak exposed records",
-    # Deepfake Sentinel (Gate C)
-    "deepfake scam",
-    "AI voice scam",
-    "deepfake video",
-    # Infrastructure Sentinel (Gate D)
-    "DDoS attack",
-    "cyber service outage",
-    # Live-event defense lane
-    "concert ticket scam",
-    "event ticket fraud",
+    "phishing scam",              # A
+    "data breach",                # B
+    "deepfake scam",              # C
+    "DDoS attack",                # D
+    "concert ticket scam",        # event
+    "online fraud",               # A
+    "ransomware attack",          # B
+    "AI voice scam",              # C
+    "cyber service outage",       # D
+    "event ticket fraud",         # event
+    "impersonation scam",         # A
+    "data leak exposed records",  # B
+    "deepfake video",             # C
+    "crypto scam",                # A
 ]
+
+# Cap on how many items a single query contributes per poll. Google News
+# returns ~40+ items per query; without this, one high-volume category (e.g.
+# ticket fraud) floods the 60-item deque and evicts every other Sentinel's
+# findings ingested earlier in the same poll. 4 × 14 queries = 56 candidates,
+# so a full poll fits the feed window with every domain represented.
+PER_QUERY_CAP = 4
 
 # A headline must read as genuine cyber/scam signal to enter the feed. This is
 # broad on purpose: it lets news across all four Sentinel domains through while
@@ -346,7 +353,9 @@ class LiveThreatMonitor:
             except Exception as exc:
                 self.last_error = f"parse '{query}': {exc}"
                 continue
-            for it in items:
+            # Cap per query so one high-volume category can't flood the feed
+            # window and evict other Sentinels' findings from the same poll.
+            for it in items[:PER_QUERY_CAP]:
                 self._ingest(it)
         self.last_poll = time.time()
 
