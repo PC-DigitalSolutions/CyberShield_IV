@@ -1,11 +1,11 @@
 """
-LiveThreatMonitor — proactive worldwide event & concert threat awareness for
-CyberShield_IV.
+LiveThreatMonitor — proactive threat awareness for CyberShield_IV.
 
-Polls Google News RSS for fan-directed scam signal around concert tours,
-festivals, and major sporting events, runs every headline through the existing
-CNS gates (cheap, no LLM), and keeps a rolling feed of flagged threats + intel
-for the dashboard to consume.
+Polls Google News RSS across the four Sentinel domains — scams/fraud,
+breaches/compliance, deepfakes/synthetic media, and infrastructure/DDoS —
+plus a live-event defense lane, runs every headline through the existing CNS
+gates (cheap, no LLM), and keeps a rolling feed of flagged threats + intel for
+the dashboard to consume.
 
 Two-stage design (keeps the Gemini quota safe):
   1. Cheap keyword gate (cns.detect_gates) classifies EVERY incoming headline.
@@ -27,31 +27,41 @@ from typing import Any, Dict, List, Optional
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search"
 
-# Search terms that surface worldwide live-event & concert threat signal —
-# fan-directed scams around concert tours, festivals, and major sporting events.
-# Every query is event-anchored, and a relevance filter (below) drops anything
-# whose headline isn't actually about live events — so the feed stays
-# event/concert-scoped instead of turning into generic cyber news.
+# Search terms that surface fresh, current threat signal across the four
+# Sentinel domains, plus one live-event defense lane. A broad relevance filter
+# (below) keeps genuine cyber/scam news in and drops Google's occasional
+# off-topic "related" items — so the feed stays current and varied instead of
+# recirculating the same narrow set of headlines every cycle.
 QUERIES: List[str] = [
+    # Anti-Scam Sentinel (Gate A)
+    "phishing scam",
+    "online fraud",
+    "impersonation scam",
+    "crypto scam",
+    # Compliance / breach Sentinel (Gate B)
+    "data breach",
+    "ransomware attack",
+    "data leak exposed records",
+    # Deepfake Sentinel (Gate C)
+    "deepfake scam",
+    "AI voice scam",
+    "deepfake video",
+    # Infrastructure Sentinel (Gate D)
+    "DDoS attack",
+    "cyber service outage",
+    # Live-event defense lane
     "concert ticket scam",
-    "concert presale scam",
-    "tour ticket fraud",
-    "festival ticket scam",
-    "event ticket phishing",
-    "fake concert tickets",
-    "ticket resale fraud",
-    "meet and greet scam",
-    "deepfake celebrity giveaway",
-    "sports event ticket fraud",
-    "Ticketmaster scam",
-    "sold out show ticket scam",
+    "event ticket fraud",
 ]
 
-# A headline must be about a live event to enter the feed. This is what keeps
-# the feed event/concert-scoped — generic, unrelated cyber news gets dropped.
-EVENT_RELEVANCE = re.compile(
-    r"ticket|concert|tour|festival|\bevent\b|presale|pre-sale|fan|\bshow\b|"
-    r"arena|stadium|world cup|olympic|super bowl|match|gig|venue|artist",
+# A headline must read as genuine cyber/scam signal to enter the feed. This is
+# broad on purpose: it lets news across all four Sentinel domains through while
+# dropping Google's occasional unrelated "related story" noise.
+CYBER_RELEVANCE = re.compile(
+    r"scam|fraud|phish|breach|leak|hack|hacked|ransomware|malware|deepfake|"
+    r"\bai\b|artificial intelligence|synthetic|cyber|ddos|outage|privacy|"
+    r"security|credential|password|exploit|vulnerabilit|spyware|stolen|"
+    r"impersonat|counterfeit|ticket|concert|tour|festival|\bevent\b|\bfan\b",
     re.I,
 )
 
@@ -66,27 +76,27 @@ GATE_SEVERITY = {
 # feed doesn't repeat the same tip — one is chosen per headline (stable).
 GATE_ADVICE = {
     "Gate A": [  # Anti-Scam Sentinel
-        "Buy tickets only from the venue's or artist's official seller. Never pay by gift card, crypto, or bank transfer, and never share verification codes.",
-        "If a ticket deal pressures you to 'act fast or lose it,' that urgency is the scam. Walk away.",
-        "Reselling? Use only the event's official resale platform — screenshots and fake QR codes won't scan at the gate.",
+        "Never send money by gift card, crypto, or bank transfer to someone you haven't verified — and never share a one-time code, even to 'confirm' your identity.",
+        "If a message pressures you to 'act now or lose it,' that urgency is the scam. Slow down and verify through an official channel.",
+        "Buying tickets or deals online? Use only the official seller — a link sent to you, or a resale screenshot, is how counterfeits get in.",
     ],
     "Gate B": [  # Compliance Sentinel
-        "Turn on two-factor authentication and use a unique password for ticket and travel accounts.",
-        "Never reuse your email password elsewhere — one breach then unlocks everything you own.",
+        "Turn on two-factor authentication and use a unique password for every important account.",
+        "Never reuse your email password anywhere else — one breach then unlocks everything you own.",
         "Got an email to 'verify your details'? Open the site yourself instead of clicking the link.",
     ],
     "Gate C": [  # Deepfake Sentinel
-        "Pause before sharing shocking clips — confirm them on the artist's or organizer's official accounts first.",
-        "AI-faked 'announcements' and giveaways spread fast. Check the verified source before you believe it.",
-        "If a video seems built to enrage or panic you, treat it as fake until you've verified it.",
+        "Pause before sharing shocking clips — confirm them on the source's official, verified accounts first.",
+        "AI-faked announcements, giveaways, and 'endorsements' spread fast. Verify the real source before you believe it.",
+        "A cloned voice or video built to make you panic or act fast is a red flag — hang up and call back on a number you trust.",
     ],
     "Gate D": [  # Infrastructure Sentinel
-        "Expect slow official sites at on-sale time. Ignore 'instant access' links claiming to fix outages.",
-        "During traffic surges, trust only the official app or site — fake mirror sites exist to harvest logins.",
-        "A 'your account is locked, click here' message during an on-sale is a classic pressure scam.",
+        "During an outage, trust only the official app or site — fake 'status' and 'instant fix' links exist to harvest logins.",
+        "A 'your account is locked, click here' message during a service disruption is a classic pressure scam.",
+        "Expect slowdowns during major traffic surges; ignore links promising 'instant access' around them.",
     ],
 }
-INTEL_ADVICE = "Stay event-ready — follow official venue, artist, and organizer channels for verified updates."
+INTEL_ADVICE = "Stay ahead of it — follow official, verified channels for security updates instead of trusting forwarded links."
 
 # Plural/stem-tolerant patterns for headline triage. The CNS gates use strict
 # word-boundary keywords tuned for user-submitted signals; news headlines need
@@ -99,7 +109,8 @@ MONITOR_PATTERNS = {
         re.I,
     ),
     "Gate C": re.compile(
-        r"deepfake|deep fake|synthetic media|manipulated (video|image)|ai[- ]generated (video|image)|disinformation|misinformation",
+        r"deepfake|deep fake|synthetic media|manipulated (video|image)|ai[- ]generated (video|image)|"
+        r"voice clon|cloned voice|ai voice|voice[- ]?spoof|disinformation|misinformation",
         re.I,
     ),
     "Gate D": re.compile(
@@ -131,7 +142,7 @@ class LiveThreatMonitor:
 
         # Durable archive. The in-memory deques above are a rolling window that
         # resets on restart; this append-only JSONL log is the permanent record
-        # of every World-Cup-relevant headline the monitor assessed. Configure
+        # of every headline the monitor assessed. Configure
         # the path with CYBERSHIELD_THREAT_LOG, or set it to "off" to disable.
         if log_path is None:
             log_path = os.environ.get("CYBERSHIELD_THREAT_LOG", os.path.join("data", "threat_log.jsonl"))
@@ -224,8 +235,8 @@ class LiveThreatMonitor:
         self._seen.add(ident)
         self.total_seen += 1
 
-        # Event/concert-scoped: drop anything not about a live event.
-        if not EVENT_RELEVANCE.search(it["title"]):
+        # Keep the feed to genuine cyber/scam signal; drop unrelated noise.
+        if not CYBER_RELEVANCE.search(it["title"]):
             return
 
         title = self._clean_title(it["title"])
@@ -270,8 +281,8 @@ class LiveThreatMonitor:
         """Append one assessed record to the JSONL archive.
 
         Best-effort: a disk error is recorded to last_error but never breaks the
-        poll loop. Every World-Cup-relevant headline the monitor classifies —
-        threat or intel — is written as one JSON line, giving a permanent,
+        poll loop. Every headline the monitor classifies — threat or intel — is
+        written as one JSON line, giving a permanent,
         append-only history that survives process restarts, unlike the
         in-memory rolling window the dashboard reads from.
         """
