@@ -19,6 +19,7 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -60,6 +61,21 @@ QUERIES: List[str] = [
 # findings ingested earlier in the same poll. 4 × 14 queries = 56 candidates,
 # so a full poll fits the feed window with every domain represented.
 PER_QUERY_CAP = 4
+
+# Seconds to wait between successive query fetches within a poll. We used to
+# fire all queries concurrently (asyncio.gather) — a burst of 14 requests from
+# one IP that Google News answers with HTTP 503. Spacing them out spreads the
+# poll over ~20s (well inside the 75s interval) and keeps every fetch
+# succeeding. A single per-request fetch (like the dashboard's /api/intel) has
+# never been throttled; the burst was the trigger.
+FETCH_SPACING = 1.5
+
+# Browser-like User-Agent. Google News RSS is far likelier to 503 an obvious
+# bot UA; the dashboard route uses a real UA and is never throttled.
+FETCH_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+)
 
 # A headline must read as genuine cyber/scam signal to enter the feed. This is
 # broad on purpose: it lets news across all four Sentinel domains through while
@@ -163,17 +179,25 @@ class LiveThreatMonitor:
                 self.last_error = f"log init: {exc}"
 
     # ── fetching ────────────────────────────────────────────
-    def _fetch(self, query: str) -> Optional[bytes]:
+    def _fetch(self, query: str, _retry: bool = True) -> Optional[bytes]:
         params = urllib.parse.urlencode(
             {"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"}
         )
         req = urllib.request.Request(
             f"{GOOGLE_NEWS_RSS}?{params}",
-            headers={"User-Agent": "Mozilla/5.0 (CyberShield Live Monitor)"},
+            headers={"User-Agent": FETCH_UA},
         )
         try:
             with urllib.request.urlopen(req, timeout=12) as resp:
                 return resp.read()
+        except urllib.error.HTTPError as exc:
+            # Google 503s a request it thinks is part of a burst; a single
+            # short-backoff retry almost always succeeds once fetches are spaced.
+            if exc.code == 503 and _retry:
+                time.sleep(2.0)
+                return self._fetch(query, _retry=False)
+            self.last_error = f"fetch '{query}': {exc}"
+            return None
         except Exception as exc:  # network hiccup — skip this query this cycle
             self.last_error = f"fetch '{query}': {exc}"
             return None
@@ -342,10 +366,14 @@ class LiveThreatMonitor:
 
     # ── loop ────────────────────────────────────────────────
     async def poll_once(self) -> None:
-        results = await asyncio.gather(
-            *(asyncio.to_thread(self._fetch, q) for q in self.queries)
-        )
-        for query, raw in zip(self.queries, results):
+        # Fetch queries one at a time with a small gap between them, rather than
+        # firing all 14 at once. The concurrent burst got Google News to answer
+        # every request with HTTP 503; spacing keeps the fetches succeeding and
+        # still finishes well inside the poll interval.
+        for i, query in enumerate(self.queries):
+            if i:
+                await asyncio.sleep(FETCH_SPACING)
+            raw = await asyncio.to_thread(self._fetch, query)
             if not raw:
                 continue
             try:
