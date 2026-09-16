@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from collections import defaultdict, deque
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from starlette.staticfiles import StaticFiles
 
@@ -63,9 +63,29 @@ if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
-@app.get("/")
+PORTFOLIO_PAGE = os.path.join("backend", "templates", "portfolio.html")
+
+
+@app.get("/", include_in_schema=False)
 async def root():
-    """The real dashboard lives in the Next.js app."""
+    """Front door — the CyberShield AI portfolio landing page. Falls back to
+    the Next.js dashboard if the page is missing."""
+    if os.path.exists(PORTFOLIO_PAGE):
+        return FileResponse(PORTFOLIO_PAGE, media_type="text/html")
+    return RedirectResponse(FRONTEND_URL)
+
+
+@app.get("/portfolio", include_in_schema=False)
+async def portfolio():
+    """Alias for the portfolio landing page served at /."""
+    if os.path.exists(PORTFOLIO_PAGE):
+        return FileResponse(PORTFOLIO_PAGE, media_type="text/html")
+    raise HTTPException(status_code=404, detail="portfolio page not found")
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard():
+    """Command Center — the real dashboard lives in the Next.js app."""
     return RedirectResponse(FRONTEND_URL)
 
 
