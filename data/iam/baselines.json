@@ -1,0 +1,47 @@
+{
+  "_note": "Demo seed data for assess_login. Fictional users. IPs are RFC 5737 documentation ranges, not real hosts. Hours are UTC, [start, end).",
+  "scoring": {
+    "impossible_travel": 35,
+    "ip_on_threat_list": 30,
+    "new_device": 25,
+    "off_hours": 10,
+    "max_score": 100,
+    "impossible_travel_kmh": 900,
+    "levels": [
+      {"min": 80, "level": "Critical"},
+      {"min": 50, "level": "High"},
+      {"min": 25, "level": "Medium"},
+      {"min": 0,  "level": "Low"}
+    ]
+  },
+  "cities": {
+    "Newark, US":  {"lat": 40.7357, "lon": -74.1724},
+    "Miami, US":   {"lat": 25.7617, "lon": -80.1918},
+    "Chicago, US": {"lat": 41.8781, "lon": -87.6298},
+    "Lagos, NG":   {"lat": 6.5244,  "lon": 3.3792}
+  },
+  "threat_ips": ["203.0.113.66", "203.0.113.91", "192.0.2.144"],
+  "users": {
+    "jdoe": {
+      "display_name": "J. Doe (Treasury Ops)",
+      "home_geo": "Newark, US",
+      "usual_hours_utc": [12, 23],
+      "known_devices": ["win-jdoe-laptop", "iphone-jdoe"],
+      "last_login": {"geo": "Newark, US", "timestamp": "2026-10-02T02:34:00Z"}
+    },
+    "mgarcia": {
+      "display_name": "M. Garcia (Retail Banking)",
+      "home_geo": "Miami, US",
+      "usual_hours_utc": [13, 22],
+      "known_devices": ["mac-mgarcia"],
+      "last_login": {"geo": "Miami, US", "timestamp": "2026-10-01T21:10:00Z"}
+    },
+    "tkim": {
+      "display_name": "T. Kim (Wire Transfers)",
+      "home_geo": "Chicago, US",
+      "usual_hours_utc": [14, 23],
+      "known_devices": ["win-tkim-desk"],
+      "last_login": {"geo": "Chicago, US", "timestamp": "2026-10-01T22:45:00Z"}
+    }
+  }
+}

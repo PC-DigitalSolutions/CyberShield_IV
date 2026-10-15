@@ -411,3 +411,38 @@ async def route(signal: str = Query(default="")):
 @app.get("/utr")
 async def utr(signal: str = Query(default="")):
     return cns.generate_utr(signal)
+
+
+# ---------------------------------------------------------------------------
+# IAM: assess-login (Sentinel Task 02)
+# ---------------------------------------------------------------------------
+import json as _json
+import pathlib as _pathlib
+
+_SEED_PATH = _pathlib.Path(__file__).parent.parent.parent / "data" / "iam" / "baselines.json"
+_IAM_SEED: dict = _json.loads(_SEED_PATH.read_text(encoding="utf-8"))
+
+from src.iam.assess import assess_login as _assess_login_fn
+
+
+class LoginAlert(BaseModel):
+    user_id: str
+    ip: str
+    device_id: str
+    geo: str
+    timestamp: str
+
+
+@app.post("/iam/assess-login", operation_id="assess_login")
+async def iam_assess_login(alert: LoginAlert):
+    """
+    Score a suspicious-login alert against the user's baseline.
+
+    Checks impossible travel (haversine), threat-listed IP, new device,
+    and off-hours access.  Returns risk_score, risk_level, flags, baseline,
+    and a plain-language explanation.  Raises HTTP 404 for unknown users.
+    """
+    try:
+        return _assess_login_fn(alert.model_dump(), _IAM_SEED)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown user")

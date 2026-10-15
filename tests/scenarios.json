@@ -1,0 +1,53 @@
+{
+  "_note": "Definition of done for assess_login (expect.flags/score/level) and for the Sentinel agent (expect.tools/action). Flags are listed in scoring order.",
+  "scenarios": [
+    {
+      "id": "A",
+      "name": "Account takeover: impossible travel from a threat-listed IP at 3 AM",
+      "request": {"user_id": "jdoe", "ip": "203.0.113.66", "device_id": "win-unknown-7f2", "geo": "Lagos, NG", "timestamp": "2026-10-02T03:14:00Z"},
+      "expect": {"flags": ["impossible_travel", "ip_on_threat_list", "new_device", "off_hours"], "risk_score": 100, "risk_level": "Critical",
+                 "tools": ["assess_login", "get_live_threats"], "action": "revoke_session_and_reset_credential"}
+    },
+    {
+      "id": "B",
+      "name": "Normal login: known device, home city, business hours",
+      "request": {"user_id": "jdoe", "ip": "198.51.100.20", "device_id": "win-jdoe-laptop", "geo": "Newark, US", "timestamp": "2026-10-02T14:00:00Z"},
+      "expect": {"flags": [], "risk_score": 0, "risk_level": "Low",
+                 "tools": ["assess_login"], "action": "none"}
+    },
+    {
+      "id": "C",
+      "name": "New device, home city, business hours",
+      "request": {"user_id": "mgarcia", "ip": "198.51.100.45", "device_id": "win-unknown-3c1", "geo": "Miami, US", "timestamp": "2026-10-02T15:30:00Z"},
+      "expect": {"flags": ["new_device"], "risk_score": 25, "risk_level": "Medium",
+                 "tools": ["assess_login"], "action": "step_up_mfa"}
+    },
+    {
+      "id": "D",
+      "name": "Off-hours login from a known device and home city",
+      "request": {"user_id": "tkim", "ip": "198.51.100.77", "device_id": "win-tkim-desk", "geo": "Chicago, US", "timestamp": "2026-10-02T06:00:00Z"},
+      "expect": {"flags": ["off_hours"], "risk_score": 10, "risk_level": "Low",
+                 "tools": ["assess_login"], "action": "none"}
+    },
+    {
+      "id": "F",
+      "name": "Threat-listed IP plus new device (borderline, gets a second opinion)",
+      "request": {"user_id": "mgarcia", "ip": "203.0.113.66", "device_id": "android-unknown-9a2", "geo": "Miami, US", "timestamp": "2026-10-02T16:00:00Z"},
+      "expect": {"flags": ["ip_on_threat_list", "new_device"], "risk_score": 55, "risk_level": "High",
+                 "tools": ["assess_login", "get_live_threats", "analyze_signal"], "action": "revoke_session"}
+    },
+    {
+      "id": "E",
+      "name": "Analyst rejects the recommendation (agent-only test, uses scenario A input)",
+      "request": {"user_id": "jdoe", "ip": "203.0.113.66", "device_id": "win-unknown-7f2", "geo": "Lagos, NG", "timestamp": "2026-10-02T03:14:00Z"},
+      "expect": {"analyst_reply": "Reject. I spoke to the user, they're traveling.", "action_executed": false,
+                 "agent_must": "acknowledge the rejection, not execute anything, and suggest a safer fallback such as step-up MFA"}
+    },
+    {
+      "id": "G",
+      "name": "Unknown user (error handling)",
+      "request": {"user_id": "nobody", "ip": "198.51.100.1", "device_id": "x", "geo": "Newark, US", "timestamp": "2026-10-02T14:00:00Z"},
+      "expect": {"http_status": 404}
+    }
+  ]
+}
